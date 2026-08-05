@@ -1,0 +1,122 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: postgresql://ci_user:ci_password@localhost:5432/ci_database?schema=public
+  NEXTAUTH_URL: http://localhost:3000
+  NEXTAUTH_SECRET: ci-only-not-a-deployment-secret
+  AUTH_ENABLE_DEMO_CREDENTIALS: "true"
+  REDIS_URL: redis://localhost:6379
+  AZURE_STORAGE_CONNECTION_STRING: UseDevelopmentStorage=true
+  NEXT_PUBLIC_APP_NAME: Digital Permit Platform
+  NEXT_PUBLIC_APP_URL: http://localhost:3000
+  NEXT_PUBLIC_SUPPORT_EMAIL: support@example.gov.uk
+  NEXT_PUBLIC_SUPPORT_PHONE: 0300 000 0000
+  NEXT_PUBLIC_DEMO_MODE: "true"
+  NEXT_PUBLIC_SHOW_SAMPLE_BANNER: "true"
+
+jobs:
+  quality:
+    name: Quality and infrastructure
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Azure Developer CLI
+        env:
+          AZD_VERSION: 1.29.0
+          AZD_SHA256: a4ae244eabe46e007ab2e587fdabf7865bb62d426d03cc4d4b814f72d68487c0
+        run: |
+          archive="$RUNNER_TEMP/azd-linux-amd64.tar.gz"
+          install_dir="$RUNNER_TEMP/azd"
+          curl --fail --silent --show-error --location \
+            "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_${AZD_VERSION}/azd-linux-amd64.tar.gz" \
+            --output "$archive"
+          echo "${AZD_SHA256}  ${archive}" | sha256sum --check --strict
+          mkdir --parents "$install_dir"
+          tar --extract --gzip --file "$archive" --directory "$install_dir"
+          mv "$install_dir/azd-linux-amd64" "$install_dir/azd"
+          chmod +x "$install_dir/azd"
+          echo "$install_dir" >> "$GITHUB_PATH"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Validate documentation links
+        run: npm run docs:check
+
+      - name: Validate public release hygiene
+        run: npm run validate:release
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=low
+
+      - name: Build application
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Validate generated licence template
+        run: unzip -t public/templates/private-hire-driver-licence.docx
+
+      - name: Restore and compile Bicep
+        run: |
+          az bicep restore --file infra/main.bicep
+          az bicep build --file infra/main.bicep --outfile "$RUNNER_TEMP/main.json"
+
+      - name: Validate azd project
+        run: azd show --no-prompt
+
+  containers:
+    name: Container images
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Build web image
+        run: docker build --tag digital-permit-web:ci .
+
+      - name: Build worker image
+        run: docker build --file Dockerfile.worker --tag digital-permit-worker:ci .
+
+      - name: Verify non-root users
+        run: |
+          test "$(docker image inspect --format '{{.Config.User}}' digital-permit-web:ci)" = "nextjs"
+          test "$(docker image inspect --format '{{.Config.User}}' digital-permit-worker:ci)" = "worker"

@@ -1,0 +1,12 @@
+node_modules
+**/node_modules
+.next
+.azure
+.git
+.env
+.env.local
+*.log
+coverage
+.DS_Store
+review-agent-app
+${userHome}

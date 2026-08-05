@@ -1,0 +1,72 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "enableAi": {
+      "value": "${ENABLE_AI}"
+    },
+    "aiLocation": {
+      "value": "${AZURE_OPENAI_LOCATION}"
+    },
+    "aiModelCapacity": {
+      "value": "${AZURE_OPENAI_CAPACITY}"
+    },
+    "databasePassword": {
+      "value": "${DATABASE_PASSWORD}"
+    },
+    "nextAuthSecret": {
+      "value": "${NEXTAUTH_SECRET}"
+    },
+    "authenticationMode": {
+      "value": "${AUTHENTICATION_MODE}"
+    },
+    "externalIdTenantId": {
+      "value": "${ENTRA_EXTERNAL_ID_TENANT_ID}"
+    },
+    "externalIdTenantSubdomain": {
+      "value": "${ENTRA_EXTERNAL_ID_TENANT_SUBDOMAIN}"
+    },
+    "externalIdClientId": {
+      "value": "${ENTRA_EXTERNAL_ID_CLIENT_ID}"
+    },
+    "externalIdClientSecret": {
+      "value": "${ENTRA_EXTERNAL_ID_CLIENT_SECRET}"
+    },
+    "workforceTenantId": {
+      "value": "${ENTRA_WORKFORCE_TENANT_ID}"
+    },
+    "workforceClientId": {
+      "value": "${ENTRA_WORKFORCE_CLIENT_ID}"
+    },
+    "workforceClientSecret": {
+      "value": "${ENTRA_WORKFORCE_CLIENT_SECRET}"
+    },
+    "demoPassword": {
+      "value": "${DEMO_PASSWORD}"
+    },
+    "seedDemoData": {
+      "value": "${SEED_DEMO_DATA}"
+    },
+    "applicationName": {
+      "value": "${NEXT_PUBLIC_APP_NAME}"
+    },
+    "supportEmail": {
+      "value": "${NEXT_PUBLIC_SUPPORT_EMAIL}"
+    },
+    "supportPhone": {
+      "value": "${NEXT_PUBLIC_SUPPORT_PHONE}"
+    },
+    "demoMode": {
+      "value": "${NEXT_PUBLIC_DEMO_MODE}"
+    },
+    "showSampleBanner": {
+      "value": "${NEXT_PUBLIC_SHOW_SAMPLE_BANNER}"
+    }
+  }
+}

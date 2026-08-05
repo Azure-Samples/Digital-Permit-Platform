@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security vulnerability
+    url: https://msrc.microsoft.com/create-report
+    about: Report vulnerabilities privately to the Microsoft Security Response Center.
+  - name: Azure support
+    url: https://azure.microsoft.com/support/options/
+    about: Get help with Azure incidents, subscription access, quota, capacity, or billing.

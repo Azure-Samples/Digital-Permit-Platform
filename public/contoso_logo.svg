@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 48" fill="none">
+  <title>Contoso Council</title>
+  <!-- Mountain icon -->
+  <path d="M1 40 L9 24 L17 40 Z" fill="white" opacity="0.45"/>
+  <path d="M6 40 L18 11 L30 40 Z" fill="white" opacity="0.75"/>
+  <path d="M12.5 25 L18 11 L23.5 25 L20.5 22 L18 23.5 L15.5 22 Z" fill="white"/>
+  <!-- Text -->
+  <text x="38" y="22" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" letter-spacing="0.5">Contoso</text>
+  <text x="38" y="38" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="400" opacity="0.85" letter-spacing="0.3">Council</text>
+</svg>

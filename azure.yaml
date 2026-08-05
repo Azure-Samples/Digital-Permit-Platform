@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: digital-permit-platform
+requiredVersions:
+  azd: ">= 1.25.0"
+
+infra:
+  provider: bicep
+  path: infra
+  module: main
+
+services:
+  web:
+    project: .
+    host: containerapp
+    language: js
+    docker:
+      path: ./Dockerfile
+      context: .
+      remoteBuild: true
+      buildArgs:
+        - NEXT_PUBLIC_APP_NAME=${NEXT_PUBLIC_APP_NAME}
+        - NEXT_PUBLIC_APP_URL=${SERVICE_WEB_URI}
+        - NEXT_PUBLIC_SUPPORT_EMAIL=${NEXT_PUBLIC_SUPPORT_EMAIL}
+        - NEXT_PUBLIC_SUPPORT_PHONE=${NEXT_PUBLIC_SUPPORT_PHONE}
+        - NEXT_PUBLIC_DEMO_MODE=${NEXT_PUBLIC_DEMO_MODE}
+        - NEXT_PUBLIC_SHOW_SAMPLE_BANNER=${NEXT_PUBLIC_SHOW_SAMPLE_BANNER}
+  worker:
+    project: .
+    host: containerapp
+    language: js
+    docker:
+      path: ./Dockerfile.worker
+      context: .
+      remoteBuild: true
+  migrations:
+    project: .
+    host: containerapp
+    language: js
+    docker:
+      path: ./Dockerfile.worker
+      context: .
+      remoteBuild: true
+
+hooks:
+  preprovision:
+    kind: js
+    run: ./scripts/azd/preprovision.mjs
+    continueOnError: false
+  postdeploy:
+    kind: js
+    run: ./scripts/azd/postdeploy.mjs
+    continueOnError: false

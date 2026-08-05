@@ -1,0 +1,94 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "23 4 * * 2"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+  packages: read
+  security-events: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DATABASE_URL: postgresql://ci_user:ci_password@localhost:5432/ci_database?schema=public
+  NEXTAUTH_URL: http://localhost:3000
+  NEXTAUTH_SECRET: ci-only-not-a-deployment-secret
+  REDIS_URL: redis://localhost:6379
+  AZURE_STORAGE_CONNECTION_STRING: UseDevelopmentStorage=true
+
+jobs:
+  private-preview:
+    name: CodeQL availability
+    if: ${{ github.event.repository.private }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain private preview behavior
+        run: |
+          echo "CodeQL upload is unavailable on this private personal repository."
+          echo "The full analysis job runs automatically when the repository is public."
+          echo "Private repositories can enable the analysis job after GitHub Advanced Security is configured."
+
+  analyse:
+    name: Analyse JavaScript and TypeScript
+    if: ${{ github.event.repository.private == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Initialise CodeQL
+        uses: github/codeql-action/init@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          languages: javascript-typescript
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Build
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+      - name: Analyse
+        uses: github/codeql-action/analyze@5595ccaf912efad79be6eef63a5619ff05969be3 # v4.37.6
+        with:
+          category: /language:javascript-typescript
+
+  gate:
+    name: CodeQL gate
+    if: ${{ always() }}
+    needs:
+      - private-preview
+      - analyse
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify applicable CodeQL path
+        env:
+          PRIVATE_PREVIEW_RESULT: ${{ needs.private-preview.result }}
+          ANALYSE_RESULT: ${{ needs.analyse.result }}
+        run: |
+          if [[ "$PRIVATE_PREVIEW_RESULT" != "success" && "$ANALYSE_RESULT" != "success" ]]; then
+            echo "Neither the private preview check nor full CodeQL analysis succeeded."
+            exit 1
+          fi

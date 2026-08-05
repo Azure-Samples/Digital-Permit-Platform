@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1.7
+
+FROM node:22-alpine AS dependencies
+RUN apk add --no-cache libc6-compat openssl
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+COPY prisma ./prisma
+RUN npx prisma generate
+
+FROM node:22-alpine AS runner
+RUN apk add --no-cache libc6-compat openssl
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+RUN addgroup --system --gid 1001 nodejs && \
+	adduser --system --uid 1001 worker
+
+COPY --from=dependencies --chown=worker:nodejs /app/node_modules ./node_modules
+COPY --chown=worker:nodejs package.json ./
+COPY --chown=worker:nodejs prisma ./prisma
+COPY --chown=worker:nodejs src ./src
+
+USER worker
+
+CMD ["npm", "run", "worker"]
