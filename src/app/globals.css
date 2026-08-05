@@ -1,0 +1,325 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --govuk-blue: #1d70b8;
+    --govuk-dark-blue: #003078;
+    --govuk-red: #d4351c;
+    --govuk-green: #00703c;
+    --govuk-black: #0b0c0e;
+    --govuk-dark-grey: #505a5f;
+    --govuk-mid-grey: #b1b4b6;
+    --govuk-light-grey: #f3f2f1;
+    --govuk-white: #ffffff;
+  }
+
+  html {
+    @apply antialiased;
+    font-size: 16px;
+  }
+
+  body {
+    @apply bg-govuk-light-grey text-govuk-black min-h-screen;
+  }
+
+  h1 {
+    @apply text-govuk-xl mb-6;
+  }
+  h2 {
+    @apply text-govuk-l mb-4;
+  }
+  h3 {
+    @apply text-govuk-m mb-3;
+  }
+
+  a:not(header a) {
+    @apply text-govuk-blue underline hover:text-govuk-dark-blue;
+  }
+
+  /* Focus states for accessibility */
+  :focus-visible {
+    outline: 3px solid #ffdd00;
+    outline-offset: 0;
+    box-shadow: inset 0 0 0 2px;
+  }
+}
+
+@layer components {
+  .govuk-container {
+    @apply max-w-govuk-container mx-auto px-4;
+  }
+
+  .govuk-main-wrapper {
+    @apply pt-8 pb-12;
+  }
+
+  .govuk-button {
+    @apply inline-flex items-center justify-center px-4 py-2 border-0
+           bg-govuk-green text-white font-bold text-base
+           shadow-[0_2px_0_#002d18] cursor-pointer
+           hover:bg-[#005a30] active:shadow-none active:translate-y-[2px]
+           disabled:opacity-50 disabled:cursor-not-allowed
+           focus-visible:outline-[3px] focus-visible:outline-[#ffdd00];
+  }
+
+  .govuk-button--secondary {
+    @apply bg-govuk-dark-grey shadow-[0_2px_0_#383f43]
+           hover:bg-[#6b7276] text-white;
+  }
+
+  .govuk-button--warning {
+    @apply bg-govuk-red shadow-[0_2px_0_#55150b]
+           hover:bg-[#aa2a16];
+  }
+
+  .govuk-button--start {
+    @apply text-lg px-6 py-3;
+  }
+
+  .govuk-input {
+    @apply block w-full border-2 border-govuk-black p-2
+           text-base focus:outline-[3px] focus:outline-[#ffdd00]
+           focus:border-govuk-black;
+  }
+
+  .govuk-input--error {
+    @apply border-govuk-red border-4;
+  }
+
+  .govuk-textarea {
+    @apply govuk-input min-h-[120px] resize-y;
+  }
+
+  .govuk-select {
+    @apply govuk-input bg-white appearance-none
+           bg-[url('data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2224%22%20height%3D%2224%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M7%2010l5%205%205-5z%22%2F%3E%3C%2Fsvg%3E')]
+           bg-no-repeat bg-[right_0.5rem_center];
+  }
+
+  .govuk-label {
+    @apply block text-base font-bold mb-1;
+  }
+
+  .govuk-hint {
+    @apply text-govuk-dark-grey text-base mb-2;
+  }
+
+  .govuk-error-message {
+    @apply text-govuk-red font-bold text-base mb-2;
+  }
+
+  .govuk-fieldset {
+    @apply border-0 p-0 m-0;
+  }
+
+  .govuk-fieldset__legend {
+    @apply text-govuk-l font-bold mb-4;
+  }
+
+  .govuk-form-group {
+    @apply mb-6;
+  }
+
+  .govuk-form-group--error {
+    @apply border-l-4 border-govuk-red pl-4;
+  }
+
+  .govuk-panel {
+    @apply bg-govuk-green text-white p-8 text-center;
+  }
+
+  .govuk-panel__title {
+    @apply text-govuk-xl mb-4;
+  }
+
+  .govuk-panel__body {
+    @apply text-2xl;
+  }
+
+  .govuk-tag {
+    @apply inline-block px-2 py-1 text-sm font-bold uppercase text-white bg-govuk-blue;
+  }
+
+  .govuk-tag--green { @apply bg-govuk-green; }
+  .govuk-tag--red { @apply bg-govuk-red; }
+  .govuk-tag--yellow { @apply bg-[#594d00] text-[#ffdd00]; }
+  .govuk-tag--grey { @apply bg-govuk-dark-grey; }
+  .govuk-tag--purple { @apply bg-[#4c2c92]; }
+  .govuk-tag--orange { @apply bg-[#b35900]; }
+
+  .govuk-summary-list {
+    @apply border-t border-govuk-mid-grey;
+  }
+
+  .govuk-summary-list__row {
+    @apply flex flex-col sm:flex-row border-b border-govuk-mid-grey py-3;
+  }
+
+  .govuk-summary-list__key {
+    @apply font-bold w-full sm:w-1/3 mb-1 sm:mb-0;
+  }
+
+  .govuk-summary-list__value {
+    @apply w-full sm:w-1/2;
+  }
+
+  .govuk-summary-list__actions {
+    @apply w-full sm:w-1/6 text-right;
+  }
+
+  .govuk-table {
+    @apply w-full border-collapse;
+  }
+
+  .govuk-table__header {
+    @apply text-left p-3 border-b-2 border-govuk-black font-bold;
+  }
+
+  .govuk-table__cell {
+    @apply p-3 border-b border-govuk-mid-grey;
+  }
+
+  .govuk-inset-text {
+    @apply border-l-[10px] border-govuk-mid-grey pl-4 py-2 my-4;
+  }
+
+  .govuk-warning-text {
+    @apply flex items-start gap-3 p-4 border-l-4 border-govuk-red bg-white my-4;
+  }
+
+  .govuk-breadcrumbs {
+    @apply text-govuk-xs mb-4;
+  }
+
+  .govuk-breadcrumbs__list {
+    @apply flex flex-wrap gap-2 list-none p-0;
+  }
+
+  .govuk-breadcrumbs__list-item::before {
+    content: "›";
+    @apply mr-2 text-govuk-dark-grey;
+  }
+
+  .govuk-breadcrumbs__list-item:first-child::before {
+    content: "";
+    @apply mr-0;
+  }
+
+  /* Card component for module catalogue */
+  .module-card {
+    @apply bg-white border border-govuk-mid-grey p-6 hover:shadow-md transition-shadow;
+  }
+
+  .module-card__title {
+    @apply text-govuk-m text-govuk-blue mb-2;
+  }
+
+  .module-card__description {
+    @apply text-govuk-dark-grey text-govuk-s mb-4;
+  }
+
+  /* Progress tracker for multi-step forms */
+  .progress-tracker {
+    @apply flex flex-col sm:flex-row gap-1 mb-8;
+  }
+
+  .progress-tracker__step {
+    @apply flex-1 text-center py-2 px-3 text-sm border-b-4 border-govuk-mid-grey text-govuk-dark-grey;
+  }
+
+  .progress-tracker__step--current {
+    @apply border-govuk-blue text-govuk-blue font-bold bg-white;
+  }
+
+  .progress-tracker__step--complete {
+    @apply border-govuk-green text-govuk-green;
+  }
+
+  /* Dashboard stat cards */
+  .stat-card {
+    @apply bg-white border border-govuk-mid-grey p-4;
+  }
+
+  .stat-card__value {
+    @apply text-3xl font-bold mb-1;
+  }
+
+  .stat-card__label {
+    @apply text-govuk-dark-grey text-sm;
+  }
+}
+
+/* ── Guided product tour (driver.js) — on-brand ─────────────── */
+.driver-popover.dpp-tour {
+  background: #ffffff;
+  border-radius: 0;
+  border-top: 6px solid var(--govuk-blue);
+  box-shadow: 0 6px 24px rgba(11, 12, 14, 0.35);
+  max-width: 360px;
+  padding: 20px;
+}
+
+.driver-popover.dpp-tour .driver-popover-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #0b2e5e;
+  margin-bottom: 8px;
+  line-height: 1.3;
+}
+
+.driver-popover.dpp-tour .driver-popover-description {
+  font-size: 0.95rem;
+  color: #0b0c0e;
+  line-height: 1.5;
+}
+
+.driver-popover.dpp-tour .driver-popover-progress-text {
+  font-size: 0.8rem;
+  color: var(--govuk-dark-grey);
+  font-weight: 700;
+}
+
+.driver-popover.dpp-tour .driver-popover-footer {
+  margin-top: 16px;
+  gap: 8px;
+}
+
+.driver-popover.dpp-tour .driver-popover-footer button {
+  text-shadow: none;
+  border-radius: 0;
+  font-weight: 700;
+  font-size: 0.95rem;
+  padding: 8px 14px;
+  border: 0;
+}
+
+.driver-popover.dpp-tour .driver-popover-next-btn {
+  background: var(--govuk-green);
+  color: #ffffff;
+  box-shadow: 0 2px 0 #002d18;
+}
+.driver-popover.dpp-tour .driver-popover-next-btn:hover {
+  background: #005a30;
+}
+
+.driver-popover.dpp-tour .driver-popover-prev-btn {
+  background: var(--govuk-dark-grey);
+  color: #ffffff;
+  box-shadow: 0 2px 0 #383f43;
+}
+.driver-popover.dpp-tour .driver-popover-prev-btn:hover {
+  background: #6b7276;
+}
+
+.driver-popover.dpp-tour button:focus-visible {
+  outline: 3px solid #ffdd00;
+  outline-offset: 0;
+}
+
+/* Spotlighted element gets an on-brand highlight ring */
+.driver-active-element {
+  outline: 3px solid #ffdd00 !important;
+  outline-offset: 2px;
+}

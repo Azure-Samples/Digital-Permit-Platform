@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <title>Digital Permit Platform</title>
+  <rect width="32" height="32" rx="4" fill="#0b2e5e"/>
+  <path d="M3 25 L11 13 L19 25 Z" fill="white" opacity="0.5"/>
+  <path d="M9.5 25 L20 8 L30.5 25 Z" fill="white" opacity="0.85"/>
+  <path d="M15.5 16.5 L20 8 L24.5 16.5 L22 14.3 L20 15.8 L18 14.3 Z" fill="white"/>
+</svg>

@@ -1,0 +1,787 @@
+// ─────────────────────────────────────────────────────────────
+// Digital Permit Platform - Prisma schema
+// ─────────────────────────────────────────────────────────────
+// Design principles:
+//  • Configuration-driven: licence logic lives in data, not code
+//  • Versioned modules: changes never corrupt historic submissions
+//  • JSONB columns for flexible / evolving structures
+//  • Immutable audit log appended on every mutation
+//  • Soft-delete via archivedAt where appropriate
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider      = "prisma-client-js"
+  engineType    = "binary"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "linux-musl-arm64-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// USERS & ORGANISATIONS
+// ═══════════════════════════════════════════════════════════════
+
+enum SystemRole {
+  APPLICANT
+  REVIEWER
+  MANAGER
+  ADMIN
+}
+
+model User {
+  id             String      @id @default(uuid())
+  email          String      @unique
+  passwordHash   String?
+  firstName      String
+  lastName       String
+  role           SystemRole  @default(APPLICANT)
+  emailVerified  Boolean     @default(false)
+  active         Boolean     @default(true)
+  phone          String?
+  teamId         String?
+  team           Team?       @relation(fields: [teamId], references: [id])
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  // Relations
+  applicantProfile  ApplicantProfile?
+  applications      Application[]
+  assignedCases     Application[]      @relation("AssignedOfficer")
+  messages          Message[]          @relation("MessageAuthor")
+  auditLogs         AuditLog[]
+  caseNotes         CaseNote[]
+  sessions          Session[]
+  licenceAnalyses   LicenceAnalysis[]
+  aiConversations   AssistantConversation[]
+  externalIdentities ExternalIdentity[]
+  uploadedPolicies  LicensingPolicy[]      @relation("PolicyUploader")
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model ExternalIdentity {
+  id           String   @id @default(uuid())
+  provider     String
+  issuer       String
+  subject      String
+  emailAtLink  String?
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastSignInAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([issuer, subject])
+  @@index([userId])
+  @@index([provider])
+  @@map("external_identities")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expires      DateTime
+  createdAt    DateTime @default(now())
+
+  @@map("sessions")
+}
+
+model Team {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  email       String?
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members         User[]
+  moduleVersions  ModuleVersion[]
+
+  @@map("teams")
+}
+
+model ApplicantProfile {
+  id                String   @id @default(uuid())
+  userId            String   @unique
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  applicantType     String   @default("individual") // individual | partnership | limited_company | charity | society | business
+  dateOfBirth       DateTime?
+  nationalInsurance String?
+  addressLine1      String?
+  addressLine2      String?
+  town              String?
+  county            String?
+  postcode          String?
+  organisationId    String?
+  organisation      Organisation? @relation(fields: [organisationId], references: [id])
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("applicant_profiles")
+}
+
+model Organisation {
+  id               String   @id @default(uuid())
+  name             String
+  type             String   // limited_company | partnership | charity | society
+  companyNumber    String?
+  charityNumber    String?
+  registeredAddress String?
+  contactEmail     String?
+  contactPhone     String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  members    ApplicantProfile[]
+  applications Application[]
+
+  @@map("organisations")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MODULE REGISTRY – the heart of the configuration-driven design
+// ═══════════════════════════════════════════════════════════════
+
+enum ModuleVisibility {
+  PUBLIC
+  STAFF_ONLY
+  DRAFT
+}
+
+enum PaymentMode {
+  EXTERNAL_REDIRECT
+  MANUAL_REFERENCE
+  RECEIPT_UPLOAD
+  API_INTEGRATION
+  NO_FEE
+}
+
+enum VerificationStatus {
+  VERIFIED_PUBLIC_PAGE
+  VERIFIED_FORM_PACK
+  VERIFIED_POLICY
+  NEEDS_COUNCIL_CONFIRMATION
+}
+
+model LicenceModule {
+  id             String   @id @default(uuid())
+  moduleKey      String   @unique
+  displayName    String
+  category       String
+  sortOrder      Int      @default(0)
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  versions       ModuleVersion[]
+  applications   Application[]
+
+  @@index([category])
+  @@index([enabled])
+  @@map("licence_modules")
+}
+
+model ModuleVersion {
+  id                    String              @id @default(uuid())
+  moduleId              String
+  module                LicenceModule       @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  version               Int                 @default(1)
+  isActive              Boolean             @default(true)
+  publishedAt           DateTime?
+  visibility            ModuleVisibility    @default(DRAFT)
+  publicDescription     String?             @db.Text
+  helpText              String?             @db.Text
+  beforeYouStartText    String?             @db.Text
+
+  // Application types supported
+  applicationTypes      String[]            @default(["new"]) // new, renewal, variation, transfer, notice, registration
+
+  // Team & routing
+  owningTeamId          String?
+  owningTeam            Team?               @relation(fields: [owningTeamId], references: [id])
+  submissionMailbox     String?
+
+  // Payment
+  paymentMode           PaymentMode         @default(NO_FEE)
+  feeSchedule           Json?               // { "new": 100, "renewal": 80, ... } or complex bands
+
+  // Eligibility
+  eligibilityRules      Json?               // [ { "field": "age", "op": ">=", "value": 18 } ]
+
+  // Form schema – array of sections, each with fields
+  formSchema            Json                @default("[]") // FormSection[]
+
+  // Conditional rules for form display
+  conditionalRules      Json?               // [ { "if": {...}, "then": {...} } ]
+
+  // Document requirements
+  documentRequirements  Json                @default("[]") // DocumentRequirement[]
+  verificationStatus    VerificationStatus  @default(NEEDS_COUNCIL_CONFIRMATION)
+
+  // Workflow definition
+  workflowDefinition    Json                @default("[]") // WorkflowStage[]
+
+  // Review checklist
+  reviewChecklist       Json                @default("[]") // ChecklistItem[]
+
+  // Notification templates
+  notificationTemplates Json?
+
+  // Retention & decision
+  retentionPolicy       Json?               // { "retentionMonths": 84 }
+  decisionTemplates     Json?               // { "approve": "...", "refuse": "..." }
+
+  // Feature flags
+  acceptingApplications Boolean             @default(true)
+
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+
+  applications          Application[]
+
+  @@unique([moduleId, version])
+  @@index([isActive])
+  @@map("module_versions")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// APPLICATIONS
+// ═══════════════════════════════════════════════════════════════
+
+enum ApplicationStatus {
+  DRAFT
+  SUBMITTED
+  AWAITING_PAYMENT
+  AWAITING_DOCUMENTS
+  UNDER_REVIEW
+  AWAITING_INSPECTION
+  AWAITING_CONSULTATION
+  AWAITING_HEARING
+  APPROVED
+  REFUSED
+  WITHDRAWN
+  INCOMPLETE
+  RETURNED
+  CANCELLED
+}
+
+model Application {
+  id                String            @id @default(uuid())
+  referenceNumber   String            @unique
+  moduleId          String
+  module            LicenceModule     @relation(fields: [moduleId], references: [id])
+  moduleVersionId   String
+  moduleVersion     ModuleVersion     @relation(fields: [moduleVersionId], references: [id])
+  applicationType   String            @default("new") // new, renewal, variation, transfer
+  applicantId       String
+  applicant         User              @relation(fields: [applicantId], references: [id])
+  organisationId    String?
+  organisation      Organisation?     @relation(fields: [organisationId], references: [id])
+
+  status            ApplicationStatus @default(DRAFT)
+  currentStage      String?           // matches a workflow stage key
+
+  // Form answers stored as JSONB – keyed by section/field
+  answers           Json              @default("{}")
+
+  // Declaration
+  declarationAccepted   Boolean       @default(false)
+  declarationTimestamp  DateTime?
+  declarationSignatory  String?
+
+  // Dates
+  submittedAt       DateTime?
+  decidedAt         DateTime?
+  expiresAt         DateTime?
+
+  // Assignment
+  assignedOfficerId String?
+  assignedOfficer   User?             @relation("AssignedOfficer", fields: [assignedOfficerId], references: [id])
+
+  // Decision
+  decisionOutcome   String?           // approved, refused, withdrawn
+  decisionReason    String?           @db.Text
+  decisionLetterUrl String?
+
+  // Star rating (animal welfare)
+  starRating        Int?
+  riskBand          String?
+
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  archivedAt        DateTime?
+
+  // Relations
+  documents         Document[]
+  payments          Payment[]
+  workflowEvents    WorkflowEvent[]
+  caseReviews       CaseReview[]
+  consultations     Consultation[]
+  inspections       InspectionTask[]
+  hearings          HearingTask[]
+  trainingTasks     TrainingTask[]
+  messages          Message[]
+  caseNotes         CaseNote[]
+  auditLogs         AuditLog[]
+  licenceAnalyses   LicenceAnalysis[]
+  policyInsight     ApplicationPolicyInsight?
+
+  @@index([applicantId])
+  @@index([status])
+  @@index([moduleId])
+  @@index([referenceNumber])
+  @@index([submittedAt])
+  @@map("applications")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// DOCUMENTS
+// ═══════════════════════════════════════════════════════════════
+
+enum DocumentStatus {
+  PENDING_UPLOAD
+  UPLOADED
+  VERIFIED
+  REJECTED
+  VIRUS_DETECTED
+  EXPIRED
+}
+
+model Document {
+  id                    String         @id @default(uuid())
+  applicationId         String
+  application           Application    @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  requirementKey        String         // matches a key from documentRequirements
+  originalFilename      String
+  storagePath           String         @default("db") // "db" means stored in fileData column
+  mimeType              String
+  fileSizeBytes         Int
+  fileData              Bytes?         // file content stored directly in Postgres
+  status                DocumentStatus @default(UPLOADED)
+  virusScanResult       String?
+  rejectionReason       String?
+  uploadedByUserId      String
+  verifiedByUserId      String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  @@index([applicationId])
+  @@index([requirementKey])
+  @@map("documents")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PAYMENTS
+// ═══════════════════════════════════════════════════════════════
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+  WAIVED
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  applicationId     String
+  application       Application   @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  amount            Decimal       @db.Decimal(10, 2)
+  currency          String        @default("GBP")
+  status            PaymentStatus @default(PENDING)
+  paymentMode       PaymentMode
+  externalReference String?       // Reference from external payment provider
+  receiptDocumentId String?       // Document ID if receipt uploaded
+  paymentUrl        String?       // External redirect URL used
+  paidAt            DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([applicationId])
+  @@map("payments")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// WORKFLOW & CASE MANAGEMENT
+// ═══════════════════════════════════════════════════════════════
+
+model WorkflowEvent {
+  id              String      @id @default(uuid())
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  fromStage       String?
+  toStage         String
+  action          String      // e.g. "submit", "assign", "request_info", "approve"
+  performedById   String?
+  metadata        Json?
+  createdAt       DateTime    @default(now())
+
+  @@index([applicationId])
+  @@index([createdAt])
+  @@map("workflow_events")
+}
+
+model CaseReview {
+  id              String      @id @default(uuid())
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  reviewerId      String
+  checklistItems  Json        @default("[]") // [ { key, label, completed, notes } ]
+  outcome         String?     // pass, fail, refer
+  notes           String?     @db.Text
+  completedAt     DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([applicationId])
+  @@map("case_reviews")
+}
+
+model CaseNote {
+  id              String      @id @default(uuid())
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  authorId        String
+  author          User        @relation(fields: [authorId], references: [id])
+  content         String      @db.Text
+  isInternal      Boolean     @default(true)
+  createdAt       DateTime    @default(now())
+
+  @@index([applicationId])
+  @@map("case_notes")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CONSULTATIONS
+// ═══════════════════════════════════════════════════════════════
+
+enum ConsultationStatus {
+  PENDING
+  SENT
+  RESPONSE_RECEIVED
+  NO_RESPONSE
+  OBJECTION
+  NO_OBJECTION
+  EXPIRED
+}
+
+model Consultation {
+  id                 String              @id @default(uuid())
+  applicationId      String
+  application        Application         @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  responsibleBody    String              // e.g. "Police", "Environmental Health", "Fire Service"
+  contactEmail       String?
+  status             ConsultationStatus  @default(PENDING)
+  sentAt             DateTime?
+  responseDeadline   DateTime?
+  responseReceivedAt DateTime?
+  responseText       String?             @db.Text
+  hasObjection       Boolean             @default(false)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@index([applicationId])
+  @@map("consultations")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TASKS: Inspections, Training, Hearings
+// ═══════════════════════════════════════════════════════════════
+
+enum TaskStatus {
+  PENDING
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  FAILED
+}
+
+model InspectionTask {
+  id              String      @id @default(uuid())
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  inspectorId     String?
+  inspectionType  String      // e.g. "premises", "vehicle", "animal_welfare", "vet"
+  scheduledDate   DateTime?
+  completedDate   DateTime?
+  status          TaskStatus  @default(PENDING)
+  outcome         String?     // pass, fail, conditional
+  notes           String?     @db.Text
+  starRating      Int?        // for animal welfare
+  riskBand        String?
+  reportUrl       String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([applicationId])
+  @@map("inspection_tasks")
+}
+
+model TrainingTask {
+  id              String      @id @default(uuid())
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  taskType        String      // e.g. "knowledge_test", "driving_assessment", "safeguarding", "disability_awareness"
+  scheduledDate   DateTime?
+  completedDate   DateTime?
+  status          TaskStatus  @default(PENDING)
+  outcome         String?
+  notes           String?     @db.Text
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([applicationId])
+  @@map("training_tasks")
+}
+
+model HearingTask {
+  id              String      @id @default(uuid())
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  hearingType     String      // e.g. "licensing_panel", "subcommittee"
+  scheduledDate   DateTime?
+  completedDate   DateTime?
+  status          TaskStatus  @default(PENDING)
+  outcome         String?     // grant, refuse, defer
+  panelNotes      String?     @db.Text
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([applicationId])
+  @@map("hearing_tasks")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MESSAGING
+// ═══════════════════════════════════════════════════════════════
+
+model Message {
+  id              String      @id @default(uuid())
+  applicationId   String
+  application     Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  authorId        String
+  author          User        @relation("MessageAuthor", fields: [authorId], references: [id])
+  subject         String
+  body            String      @db.Text
+  isFromStaff     Boolean     @default(false)
+  isRead          Boolean     @default(false)
+  readAt          DateTime?
+  createdAt       DateTime    @default(now())
+
+  @@index([applicationId])
+  @@index([authorId])
+  @@map("messages")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NOTIFICATIONS
+// ═══════════════════════════════════════════════════════════════
+
+enum NotificationChannel {
+  EMAIL
+  IN_APP
+  SMS
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  READ
+}
+
+model Notification {
+  id              String              @id @default(uuid())
+  userId          String
+  channel         NotificationChannel @default(EMAIL)
+  status          NotificationStatus  @default(PENDING)
+  templateKey     String
+  subject         String
+  body            String              @db.Text
+  metadata        Json?
+  sentAt          DateTime?
+  readAt          DateTime?
+  createdAt       DateTime            @default(now())
+
+  @@index([userId])
+  @@index([status])
+  @@map("notifications")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AUDIT LOG – immutable append-only
+// ═══════════════════════════════════════════════════════════════
+
+model AuditLog {
+  id              String      @id @default(uuid())
+  userId          String?
+  user            User?       @relation(fields: [userId], references: [id])
+  applicationId   String?
+  application     Application? @relation(fields: [applicationId], references: [id])
+  action          String      // e.g. "application.submit", "case.assign", "document.upload"
+  entityType      String      // e.g. "Application", "Document", "Payment"
+  entityId        String
+  previousValues  Json?       // snapshot before change
+  newValues       Json?       // snapshot after change
+  ipAddress       String?
+  userAgent       String?
+  createdAt       DateTime    @default(now())
+
+  @@index([applicationId])
+  @@index([userId])
+  @@index([action])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LICENSING POLICY & AI ASSISTANT
+// ═══════════════════════════════════════════════════════════════
+// Statement of Licensing Policy (Licensing Act 2003, s.5). Grounds
+// the AI assistant so answers reflect this council's actual policy.
+// ═══════════════════════════════════════════════════════════════
+
+model LicensingPolicy {
+  id            String   @id @default(uuid())
+  councilName   String   @default("Contoso Council")
+  title         String   // e.g. "Statement of Licensing Policy 2021–2026"
+  regime        String   @default("licensing_act_2003") // licensing_act_2003 | gambling_act_2005
+  versionLabel  String   // e.g. "2021–2026"
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  summary       String   @db.Text
+  isActive      Boolean  @default(true)
+  sourceUrl     String?
+  sourceFilename String?
+  sourceMimeType String?
+  sourceFileData Bytes?
+  sourceHash     String?  @unique
+  uploadedById   String?
+  uploadedBy     User?    @relation("PolicyUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  sections      PolicySection[]
+
+  @@index([isActive])
+  @@index([uploadedById])
+  @@map("licensing_policies")
+}
+
+model PolicySection {
+  id          String          @id @default(uuid())
+  policyId    String
+  policy      LicensingPolicy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  ref         String          // e.g. "5.3"
+  heading     String
+  content     String          @db.Text
+  category    String          @default("general") // objectives | cumulative_impact | hours | children | conditions | entertainment | enforcement | applicant_guidance | general
+  keywords    String[]        @default([])
+  sortOrder   Int             @default(0)
+  createdAt   DateTime        @default(now())
+
+  @@index([policyId])
+  @@index([category])
+  @@map("policy_sections")
+}
+
+enum AnalysisStatus {
+  PENDING
+  PROCESSING
+  COMPLETE
+  FAILED
+}
+
+// An uploaded licence document that the AI has read and summarised
+// at-a-glance for officers and the police.
+model LicenceAnalysis {
+  id                String         @id @default(uuid())
+  title             String         // usually the original filename
+  sourceType        String         @default("upload") // upload | paste | application
+  originalFilename  String?
+  mimeType          String?
+  fileData          Bytes?         // stored inline (mirrors Document.fileData pattern)
+  extractedText     String?        @db.Text
+  status            AnalysisStatus @default(PENDING)
+  summary           Json?          // LicenceSummary — at-a-glance structured extract
+  compliance        Json?          // ComplianceAssessment vs the active policy
+  model             String?
+  tokensUsed        Int            @default(0)
+  errorMessage      String?
+
+  uploadedById      String
+  uploadedBy        User           @relation(fields: [uploadedById], references: [id])
+  applicationId     String?
+  application       Application?   @relation(fields: [applicationId], references: [id], onDelete: SetNull)
+
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  conversations     AssistantConversation[]
+
+  @@index([uploadedById])
+  @@index([status])
+  @@map("licence_analyses")
+}
+
+// Cached AI compliance insight for a submitted application (staff view).
+model ApplicationPolicyInsight {
+  id             String      @id @default(uuid())
+  applicationId  String      @unique
+  application    Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+  status         AnalysisStatus @default(PENDING)
+  ragRating      String?     // green | amber | red
+  insight        Json?       // ComplianceAssessment
+  model          String?
+  tokensUsed     Int         @default(0)
+  errorMessage   String?
+  generatedById  String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@map("application_policy_insights")
+}
+
+// Chat threads for both the officer/police copilot and the
+// multilingual applicant assistant.
+model AssistantConversation {
+  id          String   @id @default(uuid())
+  persona     String   @default("applicant") // applicant | officer
+  language    String   @default("en")        // ISO code: en, bn, pl, ur, ro, cy, ...
+  title       String?
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  analysisId  String?
+  analysis    LicenceAnalysis? @relation(fields: [analysisId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  messages    AssistantMessage[]
+
+  @@index([userId])
+  @@index([persona])
+  @@map("assistant_conversations")
+}
+
+model AssistantMessage {
+  id             String                @id @default(uuid())
+  conversationId String
+  conversation   AssistantConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String                // user | assistant
+  content        String                @db.Text
+  citations      Json?                 // policy section refs used to ground the answer
+  tokensUsed     Int                   @default(0)
+  createdAt      DateTime              @default(now())
+
+  @@index([conversationId])
+  @@map("assistant_messages")
+}

@@ -1,0 +1,54 @@
+name: Feature proposal
+description: Propose a reusable accelerator improvement
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Proposals should be reusable across adopters rather than customer-specific. Do not include confidential roadmaps, customer data, personal data, or credentials.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Which user or operator problem should the accelerator solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Describe the behavior and where it belongs in the architecture.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include configuration-only, service, or integration alternatives.
+    validations:
+      required: true
+
+  - type: textarea
+    id: impacts
+    attributes:
+      label: Cross-cutting impacts
+      description: Address security, privacy, accessibility, responsible AI, cost, operations, migration, and compatibility where relevant.
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-submission checks
+      options:
+        - label: I searched existing issues and pull requests.
+          required: true
+        - label: This proposal does not require real customer or personal data in the repository.
+          required: true
+        - label: This is reusable beyond one authority or deployment.
+          required: true
