@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { isAiConfigured } from "@/lib/ai/openai";
 import { runApplicationInsight } from "@/lib/ai/analysis-service";
+import { isTrustedMutationOrigin } from "@/lib/http/origin";
+import { assertUuid } from "@/lib/http/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,11 +20,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const applicationId = req.nextUrl.searchParams.get("applicationId");
-  if (!applicationId) {
-    return NextResponse.json({ error: "applicationId required" }, { status: 400 });
-  }
+  const invalid = assertUuid(applicationId, "applicationId");
+  if (invalid) return invalid;
   const insight = await prisma.applicationPolicyInsight.findUnique({
-    where: { applicationId },
+    where: { applicationId: applicationId as string },
   });
   return NextResponse.json({ insight });
 }
@@ -33,6 +34,12 @@ export async function POST(req: NextRequest) {
   if (!session?.user || !STAFF_ROLES.has(session.user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (!isTrustedMutationOrigin(req)) {
+    return NextResponse.json(
+      { error: "Invalid request origin." },
+      { status: 403 },
+    );
+  }
   if (!isAiConfigured()) {
     return NextResponse.json(
       { error: "AI is not configured on this environment." },
@@ -40,15 +47,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let applicationId: string | undefined;
+  let payload: { applicationId?: unknown } = {};
   try {
-    ({ applicationId } = await req.json());
+    payload = (await req.json()) ?? {};
   } catch {
     return NextResponse.json({ error: "Malformed request." }, { status: 400 });
   }
-  if (!applicationId) {
-    return NextResponse.json({ error: "applicationId required" }, { status: 400 });
-  }
+  const invalidId = assertUuid(payload.applicationId, "applicationId");
+  if (invalidId) return invalidId;
+  const applicationId = payload.applicationId as string;
 
   const application = await prisma.application.findUnique({
     where: { id: applicationId },

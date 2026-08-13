@@ -15,6 +15,7 @@
     "test": "tsx --test tests/*.test.ts",
     "test:watch": "tsx --test --watch tests/*.test.ts",
     "docs:check": "node scripts/check-markdown-links.mjs",
+    "audit:allowlist": "node scripts/audit-with-allowlist.mjs --audit-level low",
     "validate:release": "node scripts/validate-public-release.mjs",
     "setup:identity": "node ./scripts/identity/bootstrap.mjs",
     "db:generate": "prisma generate",

@@ -66,6 +66,13 @@ export async function extractLicenceText(
 
 // ── JSON helpers ─────────────────────────────────────────────
 
+function stripDangerousKeys(_key: string, value: unknown) {
+  if (_key === "__proto__" || _key === "constructor" || _key === "prototype") {
+    return undefined;
+  }
+  return value;
+}
+
 function parseJson<T>(raw: string | null): T {
   if (!raw) throw new Error("Empty AI response");
   // Strip accidental markdown fences.
@@ -73,7 +80,18 @@ function parseJson<T>(raw: string | null): T {
     .replace(/^```(?:json)?/i, "")
     .replace(/```$/i, "")
     .trim();
-  return JSON.parse(cleaned) as T;
+  return JSON.parse(cleaned, stripDangerousKeys) as T;
+}
+
+// Prompt-injection defence: neutralise the sequences models most often
+// obey from within user content, and clip anything unusually large.
+export function sanitiseUserContent(input: string, maxChars = 4000): string {
+  return input
+    .slice(0, maxChars)
+    .replace(/\r/g, "")
+    .replace(/<\/?(system|policy|licence|instructions?)>/gi, "")
+    .replace(/\bignore (all )?(previous|prior) instructions?\b/gi, "[filtered]")
+    .replace(/\bdisregard (all )?(previous|prior) instructions?\b/gi, "[filtered]");
 }
 
 // ── Licence analysis ─────────────────────────────────────────
@@ -86,7 +104,7 @@ export interface AnalyseResult {
 /** Produce an at-a-glance structured summary of a licence document. */
 export async function analyseLicence(text: string): Promise<AnalyseResult> {
   const openai = getOpenAI();
-  const clipped = text.slice(0, MAX_DOC_CHARS);
+  const clipped = sanitiseUserContent(text.slice(0, MAX_DOC_CHARS), MAX_DOC_CHARS);
 
   const res = await openai.chat.completions.create({
     model: AI_MODEL,
@@ -129,7 +147,7 @@ export async function assessCompliance(
   const openai = getOpenAI();
   const subjectText =
     typeof subject === "string"
-      ? subject.slice(0, MAX_DOC_CHARS)
+      ? sanitiseUserContent(subject.slice(0, MAX_DOC_CHARS), MAX_DOC_CHARS)
       : JSON.stringify(subject, null, 2);
 
   const res = await openai.chat.completions.create({
@@ -202,6 +220,14 @@ function extractCitations(
   return resolveCitations(policyCtx, Array.from(refs));
 }
 
+function sanitiseHistory(history: ChatTurn[]): ChatTurn[] {
+  return history.map((turn) =>
+    turn.role === "user"
+      ? { role: "user", content: sanitiseUserContent(turn.content) }
+      : turn,
+  );
+}
+
 /** Officer / police copilot chat, grounded in policy (+ optional licence). */
 export async function chatOfficer(
   policyCtx: PolicyContext,
@@ -218,7 +244,7 @@ export async function chatOfficer(
         role: "system",
         content: officerChatPrompt(policyCtx.groundingText, licenceContext),
       },
-      ...history,
+      ...sanitiseHistory(history),
     ],
   });
   const answer = res.choices[0]?.message?.content ?? "";
@@ -248,7 +274,7 @@ export async function chatApplicant(
           languageName(langCode)
         ),
       },
-      ...history,
+      ...sanitiseHistory(history),
     ],
   });
   const answer = res.choices[0]?.message?.content ?? "";

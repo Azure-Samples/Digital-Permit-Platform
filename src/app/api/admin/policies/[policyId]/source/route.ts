@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { assertUuid } from "@/lib/http/validation";
 
 export async function GET(
   _request: Request,
@@ -12,6 +13,9 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { policyId } = await params;
+  const invalid = assertUuid(policyId, "policyId");
+  if (invalid) return invalid;
+
   const policy = await prisma.licensingPolicy.findUnique({
     where: { id: policyId },
     select: {

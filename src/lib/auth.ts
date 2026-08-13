@@ -97,10 +97,15 @@ if (isDemoCredentialsEnabled()) {
           where: { email: credentials.email.toLowerCase() },
         });
 
-        if (!user?.active || !user.passwordHash) return null;
-
-        const valid = await compare(credentials.password, user.passwordHash);
-        if (!valid) return null;
+        // Compare against a fixed known-bad hash when the user is missing or
+        // has no local hash, so response timing does not reveal whether the
+        // account exists. `$2b$14$` = 14 rounds; the hash below is a random
+        // value that will never validate.
+        const referenceHash =
+          "$2b$14$C6UzMDM.H6dfI/f/IKcEeuJf5V.WKqXAcSAcm3PhX4Zi3F7yFvHfC";
+        const target = user?.passwordHash || referenceHash;
+        const passwordOk = await compare(credentials.password, target);
+        if (!user?.active || !user.passwordHash || !passwordOk) return null;
 
         return {
           id: user.id,
@@ -115,7 +120,46 @@ if (isDemoCredentialsEnabled()) {
 }
 
 export const authOptions: NextAuthOptions = {
-  session: { strategy: "jwt", maxAge: 8 * 60 * 60 /* 8 hours */ },
+  session: { strategy: "jwt", maxAge: 4 * 60 * 60 /* 4 hours */ },
+  useSecureCookies: process.env.NODE_ENV === "production",
+  cookies: {
+    sessionToken: {
+      name:
+        process.env.NODE_ENV === "production"
+          ? "__Secure-next-auth.session-token"
+          : "next-auth.session-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+    callbackUrl: {
+      name:
+        process.env.NODE_ENV === "production"
+          ? "__Secure-next-auth.callback-url"
+          : "next-auth.callback-url",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+    csrfToken: {
+      name:
+        process.env.NODE_ENV === "production"
+          ? "__Host-next-auth.csrf-token"
+          : "next-auth.csrf-token",
+      options: {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        secure: process.env.NODE_ENV === "production",
+      },
+    },
+  },
   pages: {
     signIn: "/auth/login",
     error: "/auth/error",

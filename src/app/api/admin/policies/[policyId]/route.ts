@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { isTrustedMutationOrigin } from "@/lib/http/origin";
 import { deletePolicyDraft } from "@/lib/policy/service";
+import { assertUuid } from "@/lib/http/validation";
 
 export async function DELETE(
   request: Request,
@@ -19,8 +20,11 @@ export async function DELETE(
     return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
   }
 
+  const { policyId } = await params;
+  const invalid = assertUuid(policyId, "policyId");
+  if (invalid) return invalid;
+
   try {
-    const { policyId } = await params;
     const policy = await deletePolicyDraft(policyId, session.user.id);
     return NextResponse.json(policy);
   } catch (error) {

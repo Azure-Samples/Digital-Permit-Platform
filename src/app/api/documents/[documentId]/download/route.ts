@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { contentDispositionHeader } from "@/lib/http/content-disposition";
+import { assertUuid } from "@/lib/http/validation";
 
 export async function GET(
   _req: NextRequest,
@@ -14,6 +15,9 @@ export async function GET(
   }
 
   const resolvedParams = await params;
+  const invalid = assertUuid(resolvedParams.documentId, "documentId");
+  if (invalid) return invalid;
+
   const doc = await prisma.document.findUnique({
     where: { id: resolvedParams.documentId },
     include: { application: { select: { applicantId: true } } },
