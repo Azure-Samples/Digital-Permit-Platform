@@ -6,7 +6,7 @@ The Digital Permit Platform is a modular reference implementation for licence an
 
 The architecture favours a readable single-region starting point over a claim of production completeness. The Bicep defaults are suitable for development and demonstration. The final topology must follow the adopting organisation's availability, network, privacy, security, and recovery requirements.
 
-Editable diagram source: [architecture.excalidraw](architecture.excalidraw). Open it in the Microsoft internal Excalidraw instance at <https://aka.ms/excalidraw>.
+Editable diagram source: [architecture.excalidraw](architecture.excalidraw). Open it with the public editor at <https://excalidraw.com/>.
 
 ## Platform view
 
