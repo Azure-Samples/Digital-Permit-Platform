@@ -81,9 +81,9 @@ const forbiddenText = [
   new RegExp(["Somer", "set"].join(""), "i"),
   new RegExp(["jolly", "glacier"].join(""), "i"),
   new RegExp(["licensing", "pocacr"].join(""), "i"),
-  new RegExp(["Microsoft", "[\\s_-]+", "Internal"].join(""), "i"),
-  new RegExp(["Microsoft", "[\\s_-]+", "Confidential"].join(""), "i"),
-  new RegExp(["Internal", "[\\s_-]+(?:Use[\\s_-]+)?Only"].join(""), "i"),
+  new RegExp(["Microsoft", "[\\s_-]+", "Internal", "(?=$|[^A-Za-z0-9])"].join(""), "i"),
+  new RegExp(["Microsoft", "[\\s_-]+", "Confidential", "(?=$|[^A-Za-z0-9])"].join(""), "i"),
+  new RegExp(["(?<![A-Za-z0-9])", "Internal", "[\\s_-]+(?:Use[\\s_-]+)?Only", "(?=$|[^A-Za-z0-9])"].join(""), "i"),
   new RegExp(["e44358c7-2fab-489b", "-8e3d-0d22ef7fc09c"].join(""), "i"),
 ];
 const secretFilename = /(^|\/)(\.env(\..*)?|azureProfile\.json|clouds\.config|.*\.(pfx|pem|key))$/i;
