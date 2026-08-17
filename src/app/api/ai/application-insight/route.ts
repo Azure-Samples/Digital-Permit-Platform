@@ -5,6 +5,9 @@ import { prisma } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { isAiConfigured } from "@/lib/ai/openai";
 import { runApplicationInsight } from "@/lib/ai/analysis-service";
+import { isTrustedMutationOrigin } from "@/lib/http/origin";
+import { policyRegimeForModule } from "@/lib/policy/regimes";
+import { isPolicyInsightCurrent } from "@/lib/policy/insight-provenance";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,10 +24,41 @@ export async function GET(req: NextRequest) {
   if (!applicationId) {
     return NextResponse.json({ error: "applicationId required" }, { status: 400 });
   }
-  const insight = await prisma.applicationPolicyInsight.findUnique({
-    where: { applicationId },
+  const [insight, application] = await Promise.all([
+    prisma.applicationPolicyInsight.findUnique({ where: { applicationId } }),
+    prisma.application.findUnique({
+      where: { id: applicationId },
+      select: {
+        module: { select: { category: true, moduleKey: true } },
+      },
+    }),
+  ]);
+  if (!application) {
+    return NextResponse.json({ error: "Application not found" }, { status: 404 });
+  }
+  const policyRegime = policyRegimeForModule(
+    application.module.category,
+    application.module.moduleKey,
+  );
+  const activePolicy = await prisma.licensingPolicy.findFirst({
+    where: { regime: policyRegime, isActive: true },
+    select: { id: true, regime: true, versionLabel: true },
   });
-  return NextResponse.json({ insight });
+  const current = isPolicyInsightCurrent(
+    insight,
+    activePolicy
+      ? {
+          id: activePolicy.id,
+          regime: policyRegime,
+          versionLabel: activePolicy.versionLabel,
+        }
+      : null,
+  );
+  return NextResponse.json({
+    insight: current ? insight : null,
+    stale: Boolean(insight && !current),
+    policyRegime,
+  });
 }
 
 // POST — start (or refresh) generation of the policy insight.
@@ -32,6 +66,9 @@ export async function POST(req: NextRequest) {
   const session = await getServerSession(authOptions);
   if (!session?.user || !STAFF_ROLES.has(session.user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!isTrustedMutationOrigin(req)) {
+    return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
   }
   if (!isAiConfigured()) {
     return NextResponse.json(
@@ -69,6 +106,9 @@ export async function POST(req: NextRequest) {
       status: "PROCESSING",
       errorMessage: null,
       generatedById: session.user.id,
+      policyId: null,
+      policyRegime: null,
+      policyVersionLabel: null,
     },
     select: { id: true, status: true },
   });

@@ -7,6 +7,12 @@ import { PolicyDocumentView } from "@/components/policy/policy-document-view";
 import { PolicyVersionActions } from "@/components/policy/policy-version-actions";
 import { prisma } from "@/lib/db";
 import { requireRole } from "@/lib/permissions";
+import { getPolicyLifecycleStatus } from "@/lib/policy/service";
+import {
+  isPolicyRegime,
+  isTaxiModule,
+  POLICY_REGIME_CONFIG,
+} from "@/lib/policy/regimes";
 
 export const dynamic = "force-dynamic";
 
@@ -22,23 +28,45 @@ export default async function PolicyVersionPreviewPage({
     where: { id: policyId },
     select: {
       id: true,
+      regime: true,
       title: true,
       councilName: true,
       versionLabel: true,
+      effectiveFrom: true,
+      effectiveTo: true,
       summary: true,
       isActive: true,
       sourceFilename: true,
+      sourceMimeType: true,
+      searchIndexTruncated: true,
+      searchableCharacters: true,
       sections: { orderBy: { sortOrder: "asc" } },
       uploadedBy: { select: { firstName: true, lastName: true } },
     },
   });
-  if (!policy) return notFound();
+  if (!policy || !isPolicyRegime(policy.regime)) return notFound();
+  const regimeConfig = POLICY_REGIME_CONFIG[policy.regime];
+  const historyEvent = await prisma.auditLog.findFirst({
+    where: {
+      action: { in: ["policy.activate", "policy.supersede"] },
+      entityType: "LicensingPolicy",
+      entityId: policy.id,
+    },
+    select: { id: true },
+  });
+  const status = getPolicyLifecycleStatus(policy.isActive, Boolean(historyEvent));
+  const taxiModulesEnabled =
+    policy.regime !== "taxi_private_hire" ||
+    (await prisma.licenceModule.findMany({
+      where: { enabled: true },
+      select: { category: true, moduleKey: true },
+    })).some((module) => isTaxiModule(module.category, module.moduleKey));
 
   return (
     <>
       <GovHeader
         serviceName="Licensing Portal - Staff"
-        navigation={getNavigationForRole(session.user.role, "/staff/policy")}
+        navigation={getNavigationForRole(session.user.role, "/staff/policy/manage")}
         userName={session.user.name}
         userRole={session.user.role}
       />
@@ -47,10 +75,10 @@ export default async function PolicyVersionPreviewPage({
           <nav className="govuk-breadcrumbs mb-6" aria-label="Breadcrumb">
             <ol className="govuk-breadcrumbs__list">
               <li className="govuk-breadcrumbs__list-item">
-                <Link href="/staff/policy">Policy Copilot</Link>
+                <Link href="/staff">Dashboard</Link>
               </li>
               <li className="govuk-breadcrumbs__list-item">
-                <Link href="/staff/policy/manage">Manage policies</Link>
+                <Link href="/staff/policy/manage">Licensing policy</Link>
               </li>
               <li className="govuk-breadcrumbs__list-item">Preview version</li>
             </ol>
@@ -63,13 +91,37 @@ export default async function PolicyVersionPreviewPage({
                 <h1 className="!mb-0">{policy.title}</h1>
               </div>
               <p className="text-govuk-dark-grey">
-                {policy.councilName} · {policy.versionLabel} · {policy.sections.length} sections
+                {regimeConfig.label} · {policy.councilName} · {policy.versionLabel} · effective {" "}
+                {policy.effectiveFrom.toLocaleDateString("en-GB")}
+                {policy.effectiveTo
+                  ? ` to ${policy.effectiveTo.toLocaleDateString("en-GB")}`
+                  : " onwards"}
+                {" · "}
+                {policy.sections.length > 0
+                  ? "searchable for Policy Copilot"
+                  : "original document only"}
               </p>
-              <span className={policy.isActive ? "govuk-tag" : "govuk-tag govuk-tag--grey"}>
-                {policy.isActive ? "Active" : "Draft"}
+              <p className="mb-2 text-xs text-govuk-dark-grey">
+                {regimeConfig.legalBasis}. {regimeConfig.requirement}
+              </p>
+              <span
+                className={`govuk-tag ${
+                  status === "active"
+                    ? ""
+                    : status === "draft"
+                      ? "govuk-tag--yellow"
+                      : "govuk-tag--grey"
+                }`}
+              >
+                {status === "active" ? "Active" : status === "draft" ? "Draft" : "Previous"}
               </span>
             </div>
-            <PolicyVersionActions policyId={policy.id} isActive={policy.isActive} />
+            <PolicyVersionActions
+              policyId={policy.id}
+              status={status}
+              regime={policy.regime}
+              taxiModulesEnabled={taxiModulesEnabled}
+            />
           </div>
 
           <PolicyDocumentView
@@ -81,7 +133,15 @@ export default async function PolicyVersionPreviewPage({
                 : undefined
             }
             sourceFilename={policy.sourceFilename}
+            sourceMimeType={policy.sourceMimeType}
           />
+          {policy.searchIndexTruncated && (
+            <div className="govuk-warning-text mt-6" role="status">
+              <strong>Policy Copilot has a partial search index.</strong>{" "}
+              {policy.searchableCharacters.toLocaleString()} characters are searchable.
+              Review the retained original for provisions outside the index.
+            </div>
+          )}
         </div>
       </main>
       <GovFooter />

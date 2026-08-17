@@ -2,9 +2,10 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { generateLicenceDocument } from "@/lib/licence-generator";
+import { contentDispositionHeader } from "@/lib/http/content-disposition";
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ applicationId: string }> }
 ) {
   try {
@@ -14,9 +15,16 @@ export async function POST(
     }
 
     const resolvedParams = await params;
+    const body = (await req.json().catch(() => ({}))) as {
+      templateId?: unknown;
+    };
+    if (body.templateId !== undefined && typeof body.templateId !== "string") {
+      return NextResponse.json({ error: "Invalid template selection" }, { status: 400 });
+    }
     const result = await generateLicenceDocument(
       resolvedParams.applicationId,
-      session.user.id
+      session.user.id,
+      body.templateId,
     );
 
     // Return the filled DOCX as a download
@@ -24,7 +32,12 @@ export async function POST(
       headers: {
         "Content-Type":
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        "Content-Disposition": `attachment; filename="licence_${result.licenceNumber.replace(/\//g, "_")}.docx"`,
+        "Content-Disposition": contentDispositionHeader(
+          "attachment",
+          `licence_${result.licenceNumber.replace(/\//g, "_")}.docx`,
+        ),
+        "Cache-Control": "private, no-store",
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch (error) {

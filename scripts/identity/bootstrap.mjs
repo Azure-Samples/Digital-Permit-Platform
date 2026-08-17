@@ -140,7 +140,16 @@ function getAzdValue(name) {
 }
 
 function setAzdValue(name, value) {
-  runAzd(["env", "set", name, value, "--no-prompt"]);
+  const safeName = String(name).replace(/[^A-Za-z0-9_]/g, "").slice(0, 128);
+  try {
+    runAzd(["env", "set", name, value, "--no-prompt"]);
+  } catch {
+    // Rethrow without ever referencing `value`, so no credential material can
+    // reach an error message or log via this call site.
+    throw new Error(
+      `Failed to write azd environment variable ${safeName}. Check azd sign-in and environment state.`,
+    );
+  }
 }
 
 function isConfiguredValue(value) {
@@ -553,7 +562,7 @@ async function ensureCredential({
       for (const [name, value] of previousValues) setAzdValue(name, value);
     } catch {
       throw new Error(
-        `${error.message} Local rollback also failed; Entra credential ${credential.keyId} remains active for safe recovery.`,
+        `${error.message} Local rollback also failed; the new Entra credential remains active in the tenant. Rerun setup:identity with --rotate-secrets to reconcile.`,
       );
     }
     await removeApplicationPassword(token, application, credential.keyId);
@@ -899,7 +908,15 @@ if (
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   main().catch((error) => {
-    console.error(`Identity bootstrap failed: ${error.message}`);
+    const rawMessage =
+      error instanceof Error && typeof error.message === "string"
+        ? error.message
+        : "Unknown error";
+    // Belt-and-braces: strip anything that resembles a long opaque token or
+    // base64/base64url blob from the surfaced error so credential material
+    // cannot reach process stderr even if a downstream path forgot to sanitise.
+    const safeMessage = rawMessage.replace(/[A-Za-z0-9+/_-]{32,}/g, "[redacted]");
+    console.error(`Identity bootstrap failed: ${safeMessage}`);
     process.exitCode = 1;
   });
 }

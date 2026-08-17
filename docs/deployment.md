@@ -86,6 +86,22 @@ azd up
 
 Use a short environment name such as `dev`, `test01`, or `pilot`. It becomes part of resource names and tags.
 
+### Deploy from a setup package
+
+The standalone customer installer produces one ZIP containing the validated deployment project, a secret-free council package, and local launchers.
+
+On Windows, extract the ZIP and double-click:
+
+```text
+Install-DigitalPermitPlatform.cmd
+```
+
+The launcher checks/installs Microsoft prerequisites with permission, validates the package, signs the deployment owner in locally, configures non-secret `azd` values, runs `azd provision --preview`, and asks for explicit confirmation before deployment. It writes a non-secret `deployment-result.json` receipt when complete.
+
+Technical operators can still run `npm run setup:deploy -- --package "/path/to/council-setup.zip"`. Pass `--plan` for no-change validation or `--subscription <guid>` to pin the target subscription.
+
+See [Hosted installer and council setup](installer.md) for the complete three-phase journey and identity boundaries.
+
 ### What the hooks do
 
 The `preprovision` hook creates missing values once per environment:
@@ -103,7 +119,7 @@ The `postdeploy` hook starts the migration job, overrides `SEED_DEMO_DATA` for t
 
 ## Configure before deployment
 
-Set values after `azd env new` and before `azd up`, or update them and rerun `azd up`.
+Set bootstrap values after `azd env new` and before `azd up`, or update them and rerun `azd up`.
 
 ```bash
 azd env set NEXT_PUBLIC_APP_NAME "Example Council Permit Platform"
@@ -116,11 +132,25 @@ azd env set SEED_DEMO_DATA true
 
 Use `SEED_DEMO_DATA=false` outside demonstration environments. Demo mode is a UI flag; it is not a security boundary.
 
+### Complete the in-app setup
+
+After migrations and the web application are healthy, open `<SERVICE_WEB_URI>/setup`. Public bootstrap values are used only until an administrator applies a council profile.
+
+The browser keeps an unfinished draft locally. In-app Setup controls only the presentation and resident-service configuration:
+
+- council and service identity;
+- landscape logo, branding and support contacts;
+- an explicit public-impact publication gate with an atomic audit record.
+
+Azure resources, region, identity, AI and deployment settings are not shown or editable in the main application. For those changes, use the separate customer installer or controlled `azd` and identity workflows. Module availability is managed separately through **Admin > Modules**. Retain the setup ZIP as a reviewed configuration record; it contains no secrets.
+
 ### Load the local licensing policy
 
-After the first application deployment, a manager or administrator uses **Policy Copilot > Manage policy versions** to upload the authority's approved Statement of Licensing Policy. The application accepts text-based PDF, DOCX, Markdown and text files up to 10MB, preserves the source file, creates an inactive version, and extracts sections for preview. Activating the reviewed version switches Policy Copilot and application insight together; it does not require a redeployment.
+After the first application deployment, a manager or administrator uses **Licensing policy** to upload the authority's approved local Statement of Licensing Policy. The application accepts PDF, DOCX, Markdown and text files up to 50MB, preserves the complete source file, and creates an inactive draft. PDFs are reviewed in the original embedded document viewer and can also be opened or downloaded. Activating the reviewed version switches Policy Copilot and application insight together without a redeployment and without a policy-length gate. Add each later adopted edition or revision as a new draft; previously active versions are retained for audit and rollback.
 
-Scanned image-only PDFs require OCR before upload. Do not enable policy-grounded AI for service users until the authority has reviewed the parsed sections and tested representative citations.
+Text extraction is an internal search aid, not a replacement copy of the policy. Policy Copilot retrieves a bounded set of relevant excerpts for each request rather than sending the complete statement to the model. Scanned/image-only PDFs remain valid official records but need a text-based replacement or OCR before AI features can use them.
+
+Do not enable policy-grounded AI for service users until the authority has tested representative retrieval and citations against the retained original. Scanned/image-only PDFs can be used as official records immediately, but require OCR or a text-based replacement before enabling AI grounding.
 
 ### Configure end-user identity
 

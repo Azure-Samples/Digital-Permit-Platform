@@ -3,14 +3,20 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle, Trash2 } from "lucide-react";
+import type { PolicyLifecycleStatus } from "@/lib/policy/service";
+import type { PolicyRegime } from "@/lib/policy/regimes";
 
 export function PolicyVersionActions({
   policyId,
-  isActive,
+  status,
+  regime,
+  taxiModulesEnabled = true,
   redirectAfterDelete = "/staff/policy/manage",
 }: {
   policyId: string;
-  isActive: boolean;
+  status: PolicyLifecycleStatus;
+  regime: PolicyRegime;
+  taxiModulesEnabled?: boolean;
   redirectAfterDelete?: string;
 }) {
   const router = useRouter();
@@ -20,7 +26,11 @@ export function PolicyVersionActions({
   async function runAction(action: "activate" | "delete") {
     const confirmation =
       action === "activate"
-        ? "Activate this policy version for all policy-grounded AI responses?"
+        ? regime === "taxi_private_hire" && !taxiModulesEnabled
+          ? "Taxi and private-hire modules are currently disabled. Activate this policy anyway? This will not enable any services."
+          : status === "superseded"
+          ? "Make this previous statement active again? It will replace the version currently used by Policy Copilot and application insight."
+          : "Activate this statement for all policy-grounded AI responses?"
         : "Delete this inactive policy draft? This cannot be undone.";
     if (!window.confirm(confirmation)) return;
 
@@ -46,7 +56,7 @@ export function PolicyVersionActions({
   return (
     <div>
       <div className="flex flex-wrap gap-3">
-        {!isActive && (
+        {status !== "active" && (
           <button
             type="button"
             className="govuk-button inline-flex items-center gap-2"
@@ -54,10 +64,14 @@ export function PolicyVersionActions({
             onClick={() => void runAction("activate")}
           >
             <CheckCircle className="h-4 w-4" aria-hidden="true" />
-            {pending === "activate" ? "Activating..." : "Activate version"}
+            {pending === "activate"
+              ? "Activating..."
+              : status === "superseded"
+                ? "Make active again"
+                : "Activate statement"}
           </button>
         )}
-        {!isActive && (
+        {status === "draft" && (
           <button
             type="button"
             className="govuk-button govuk-button--warning inline-flex items-center gap-2"

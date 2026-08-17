@@ -2,13 +2,21 @@
 // Licence document generator
 // Fills a DOCX template with application data and returns a buffer
 // ─────────────────────────────────────────────────────────────
-import { createReport } from "docx-templates";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { prisma } from "./db";
 import { getApplicantDisplayName } from "./applicant-name";
-import { formatDateDDMMYYYY } from "./format";
 import { writeAuditLog } from "./audit";
+import {
+  buildLicenceTemplateData,
+  renderLicenceTemplate,
+} from "./licence-templates";
+import {
+  STANDARD_LICENCE_TEMPLATE_ID,
+  STANDARD_LICENCE_TEMPLATE_PATH,
+} from "./licence-template-fields";
+import { getCouncilProfile } from "./setup/profile";
+import type { FormSection } from "@/types/module";
 
 /**
  * Get licence config (duration etc.) from the database or defaults.
@@ -27,9 +35,6 @@ export async function getLicenceConfig() {
   return {
     defaultDurationYears: (stored?.defaultDurationYears as number) ?? 3,
     licenceNumberPrefix: (stored?.licenceNumberPrefix as string) ?? "PHD",
-    templatePath:
-      (stored?.templatePath as string) ??
-      "public/templates/private-hire-driver-licence.docx",
   };
 }
 
@@ -55,44 +60,12 @@ export async function generateLicenceNumber(prefix = "PHD"): Promise<string> {
   return `${prefix}/${year}/${seq}`;
 }
 
-/**
- * Build address lines from form answers.
- */
-function buildAddressLines(
-  answers: Record<string, unknown>
-): string {
-  // Flatten sections
-  const flat: Record<string, unknown> = {};
-  for (const [, v] of Object.entries(answers)) {
-    if (typeof v === "object" && v !== null && !Array.isArray(v)) {
-      Object.assign(flat, v);
-    }
-  }
-
-  // Look for address object or individual fields
-  const addr = flat["address"] as Record<string, string> | undefined;
-  if (addr && typeof addr === "object") {
-    return [addr.line1, addr.line2, addr.town, addr.county, addr.postcode?.toUpperCase()]
-      .filter(Boolean)
-      .join("\n");
-  }
-
-  // Try individual fields
-  return [
-    flat["address_line_1"] || flat["addressLine1"],
-    flat["address_line_2"] || flat["addressLine2"],
-    flat["town"] || flat["city"],
-    flat["county"],
-    (flat["postcode"] as string)?.toUpperCase(),
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
 export interface GenerateLicenceResult {
   licenceNumber: string;
   storagePath: string;
   buffer: Buffer;
+  templateId: string;
+  templateName: string;
 }
 
 /**
@@ -100,7 +73,8 @@ export interface GenerateLicenceResult {
  */
 export async function generateLicenceDocument(
   applicationId: string,
-  userId: string
+  userId: string,
+  templateId = STANDARD_LICENCE_TEMPLATE_ID,
 ): Promise<GenerateLicenceResult> {
   const app = await prisma.application.findUnique({
     where: { id: applicationId },
@@ -109,6 +83,7 @@ export async function generateLicenceDocument(
         include: { applicantProfile: true },
       },
       module: true,
+      moduleVersion: { select: { formSchema: true } },
     },
   });
 
@@ -117,7 +92,10 @@ export async function generateLicenceDocument(
     throw new Error("Application must be approved to generate a licence");
   }
 
-  const config = await getLicenceConfig();
+  const [config, councilProfile] = await Promise.all([
+    getLicenceConfig(),
+    getCouncilProfile(),
+  ]);
   const answers = (app.answers as Record<string, unknown>) ?? {};
 
   // Generate licence number
@@ -135,29 +113,45 @@ export async function generateLicenceDocument(
     app.applicant.lastName
   );
 
-  // Build address
-  const licHolderAddress = buildAddressLines(answers);
+  let template: Uint8Array;
+  let templateName: string;
+  if (templateId === STANDARD_LICENCE_TEMPLATE_ID) {
+    template = await readFile(
+      path.join(process.cwd(), STANDARD_LICENCE_TEMPLATE_PATH),
+    );
+    templateName = "Standard licence template";
+  } else {
+    const uploadedTemplate = await prisma.licenceTemplate.findFirst({
+      where: {
+        id: templateId,
+        assignments: { some: { moduleId: app.moduleId } },
+      },
+      select: { name: true, fileData: true },
+    });
+    if (!uploadedTemplate) {
+      throw new Error("The selected template is not assigned to this licence type");
+    }
+    template = new Uint8Array(uploadedTemplate.fileData);
+    templateName = uploadedTemplate.name;
+  }
 
-  // Read template
-  const templatePath = path.join(process.cwd(), config.templatePath);
-  const template = await readFile(templatePath);
-
-  // Fill template
-  const filledDoc = await createReport({
-    template,
-    data: {
-      lic_no: licenceNumber,
-      commencement_date: formatDateDDMMYYYY(
-        commencementDate.toISOString().split("T")[0]
-      ),
-      expiry_date: formatDateDDMMYYYY(
-        expiryDate.toISOString().split("T")[0]
-      ),
-      lic_holder: licHolder,
-      lic_holder_address: licHolderAddress,
-    },
-    cmdDelimiter: ["{{", "}}"],
+  const templateData = buildLicenceTemplateData({
+    answers,
+    formSchema: app.moduleVersion.formSchema as unknown as FormSection[],
+    moduleName: app.module.displayName,
+    referenceNumber: app.referenceNumber,
+    applicationType: app.applicationType,
+    licenceNumber,
+    issueDate: commencementDate,
+    expiryDate,
+    applicantName: licHolder,
+    applicantProfile: app.applicant.applicantProfile,
+    councilName: councilProfile.organisationName,
+    serviceName: councilProfile.serviceName,
+    supportEmail: councilProfile.supportEmail,
+    supportPhone: councilProfile.supportPhone,
   });
+  const filledDoc = await renderLicenceTemplate(template, templateData);
 
   const buffer = Buffer.from(filledDoc);
 
@@ -197,8 +191,16 @@ export async function generateLicenceDocument(
       commencementDate: commencementDate.toISOString(),
       expiryDate: expiryDate.toISOString(),
       documentId: licenceDoc.id,
+      templateId,
+      templateName,
     },
   });
 
-  return { licenceNumber, storagePath: licenceDoc.id, buffer };
+  return {
+    licenceNumber,
+    storagePath: licenceDoc.id,
+    buffer,
+    templateId,
+    templateName,
+  };
 }

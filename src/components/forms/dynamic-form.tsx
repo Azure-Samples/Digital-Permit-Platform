@@ -17,12 +17,17 @@ interface DynamicFormProps {
   sections: FormSection[];
   currentSectionIndex: number;
   answers: Record<string, unknown>;
-  onSave: (sectionKey: string, answers: Record<string, unknown>) => void;
+  onSave: (
+    sectionKey: string,
+    answers: Record<string, unknown>,
+  ) => Promise<boolean>;
   onNext: () => void;
   onPrevious: () => void;
   isFirstSection: boolean;
   isLastSection: boolean;
   saving?: boolean;
+  saveError?: string | null;
+  saveMessage?: string | null;
 }
 
 export function DynamicForm({
@@ -35,6 +40,8 @@ export function DynamicForm({
   isFirstSection,
   isLastSection,
   saving = false,
+  saveError,
+  saveMessage,
 }: DynamicFormProps) {
   const section = sections[currentSectionIndex];
 
@@ -97,16 +104,16 @@ export function DynamicForm({
     return Object.keys(newErrors).length === 0;
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (validateSection()) {
-      onSave(section.key, localAnswers);
-      onNext();
+      const saved = await onSave(section.key, localAnswers);
+      if (saved) onNext();
     }
   }
 
-  function handleSaveDraft() {
-    onSave(section.key, localAnswers);
+  async function handleSaveDraft() {
+    await onSave(section.key, localAnswers);
   }
 
   function handleFieldChange(key: string, value: unknown) {
@@ -142,6 +149,21 @@ export function DynamicForm({
           );
         })}
       </fieldset>
+
+      {saveError && (
+        <div className="govuk-error-summary mt-6" role="alert">
+          <h2 className="govuk-error-summary__title">Your progress was not saved</h2>
+          <div className="govuk-error-summary__body">{saveError}</div>
+        </div>
+      )}
+
+      {saveMessage && !saveError && (
+        <div className="govuk-notification-banner mt-6" role="status">
+          <div className="govuk-notification-banner__content">
+            <p className="font-bold mb-0">{saveMessage}</p>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-3 mt-8">
         {!isFirstSection && (

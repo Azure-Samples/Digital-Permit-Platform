@@ -87,7 +87,7 @@ function buildAdminSteps(): DriveStep[] {
     popover: {
       title: "More admin tools",
       description:
-        "The top menu also has Licences (issued permits and the public register), Users (staff accounts and roles), and an Audit log that records every change — who did what, and when.",
+        "The top menu also has Setup for council-wide configuration, Templates for generated licence documents, Users for staff accounts and roles, and an Audit log of every change.",
     },
   });
 

@@ -33,7 +33,12 @@ export function ApplicationInsight({ applicationId }: { applicationId: string })
         `/api/ai/application-insight?applicationId=${applicationId}`
       );
       const data = await res.json();
-      if (res.ok) setInsight(data.insight);
+      if (res.ok) {
+        setInsight(data.insight);
+        if (data.stale) {
+          setError("A previous insight used a different policy. Generate a new insight for the active policy.");
+        }
+      }
     } finally {
       setLoading(false);
     }
@@ -101,8 +106,7 @@ export function ApplicationInsight({ applicationId }: { applicationId: string })
         )}
       </div>
       <p className="govuk-hint">
-        An automatic check of this application against the council&apos;s Statement of
-        Licensing Policy.
+        An automatic check against the active council policy for this licence type.
       </p>
 
       {loading ? (

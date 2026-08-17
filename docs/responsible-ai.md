@@ -39,22 +39,22 @@ Every output is advisory. The user interface and operating process should make t
 
 ## System behavior
 
-The sample uses a retrieval-by-context pattern rather than an external search index:
+The sample uses regime-aware retrieval by context rather than an external search index:
 
-1. active policy sections are read from PostgreSQL;
-2. relevant application or licence context is assembled server-side;
-3. a system prompt defines task, scope, and output expectations;
-4. the request is sent keylessly to an Azure OpenAI deployment;
-5. structured results and extracted section references are stored;
-6. the UI presents them for human review.
+1. active Licensing Act and taxi/private-hire policy sections are read from PostgreSQL;
+2. the question, application category or document text selects the applicable regime;
+3. relevant excerpts are ranked within a shared 48,000-character prompt budget;
+4. a system prompt keeps premises and taxi legal tests distinct;
+5. the request is sent keylessly to an Azure OpenAI deployment;
+6. structured results and namespaced section references are stored and presented for human review.
 
-This pattern is simple and transparent, but context size grows with policy length. Larger policy estates should use an evaluated retrieval approach with chunking, metadata, version filters, and citation verification.
+This lexical pattern is simple and transparent, but it is not semantic retrieval. Larger or more varied policy estates should use an evaluated retrieval approach with chunking, metadata, regime/version filters and citation verification.
 
 ## Limitations
 
 - Language models can invent facts, policy text, citations, or certainty.
 - Citation extraction detects section-like references; it does not prove that the cited section supports the claim.
-- A complete policy in context does not guarantee that the model will select the correct provision.
+- Retrieved excerpts may omit a relevant provision or select a similarly worded section from the wrong context; regime-routing and retrieval recall require evaluation.
 - Uploaded PDFs can have poor text extraction, unusual layout, scans, tables, or hidden content.
 - The sample does not perform OCR for image-only documents.
 - Prompt injection can appear in applicant answers or uploaded documents.
@@ -77,7 +77,7 @@ Define a named accountable role for each AI experience. At minimum:
 
 ## Data handling
 
-Replace the seeded policy before evaluation or use. Import the authority's approved document in **Policy Copilot > Manage policy versions**, compare the parsed preview with the retained source file, and activate it only after approval. Citation-style references are not proof that a statement is correct; users must be able to inspect the cited source section.
+Replace the seeded policy before evaluation or use. Upload the authority's approved documents in **Licensing policy**, selecting the correct Licensing Act or taxi/private-hire regime, review each retained original, and activate it only after approval. Repeat that process for each adopted edition or revision; the application retains previously active versions for traceability and rollback. Policy Copilot retrieves bounded excerpts from the applicable internally indexed policy rather than receiving complete documents. Citation-style references are not proof that a statement is correct; users must be able to inspect the authoritative source document.
 
 Treat prompts, document text, application answers, and model responses according to the highest data classification in the request.
 
@@ -107,7 +107,7 @@ The sample provides role checks, keyless Azure authentication, bounded chat hist
 - offline fallback when AI is unavailable;
 - independent citation verification for high-impact output.
 
-The included full-context grounding mode rejects activation when parsed policy sections exceed 120,000 characters. Larger policy corpora require an approved retrieval/indexing design that preserves section references and enforces a model-specific prompt budget; do not remove the activation guard and send the full document blindly.
+Policy activation is independent of document length. The complete retained source remains authoritative, while the included retrieval layer ranks indexed sections for each request and supplies at most 48,000 relevant characters to the model. Treat this bounded lexical retrieval as a reference implementation: evaluate recall, citation accuracy and adversarial queries against each council's approved statement before production use. Scanned/image-only policies have no searchable grounding until OCR text or a text-based replacement is supplied.
 
 ## Evaluation plan
 

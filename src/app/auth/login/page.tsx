@@ -103,33 +103,43 @@ function LoginForm() {
           {providers === null && <p>Loading sign-in options...</p>}
 
           {applicantSignInEnabled && (
-            <button
-              type="button"
-              className="govuk-button block mb-3"
-              disabled={loadingProvider !== null}
-              onClick={() =>
-                handleProviderSignIn(EXTERNAL_ID_PROVIDER_ID, callbackUrl)
-              }
-            >
-              {loadingProvider === EXTERNAL_ID_PROVIDER_ID
-                ? "Redirecting..."
-                : "Continue with an applicant account"}
-            </button>
+            <div className="mb-6">
+              <h2 className="text-govuk-l mb-2">Residents and businesses</h2>
+              <p className="text-govuk-dark-grey mb-3">
+                Sign in or create a citizen account using any email address. You
+                do not need a council email address or staff account.
+              </p>
+              <button
+                type="button"
+                className="govuk-button block"
+                disabled={loadingProvider !== null}
+                onClick={() =>
+                  handleProviderSignIn(EXTERNAL_ID_PROVIDER_ID, callbackUrl)
+                }
+              >
+                {loadingProvider === EXTERNAL_ID_PROVIDER_ID
+                  ? "Redirecting..."
+                  : "Citizen sign in or create an account"}
+              </button>
+            </div>
           )}
 
           {workforceSignInEnabled && (
-            <button
-              type="button"
-              className="govuk-button govuk-button--secondary block"
-              disabled={loadingProvider !== null}
-              onClick={() =>
-                handleProviderSignIn(WORKFORCE_PROVIDER_ID, staffCallbackUrl)
-              }
-            >
-              {loadingProvider === WORKFORCE_PROVIDER_ID
-                ? "Redirecting..."
-                : "Sign in with a council staff account"}
-            </button>
+            <div className="mb-6">
+              <h2 className="text-govuk-l mb-2">Council staff</h2>
+              <button
+                type="button"
+                className="govuk-button govuk-button--secondary block"
+                disabled={loadingProvider !== null}
+                onClick={() =>
+                  handleProviderSignIn(WORKFORCE_PROVIDER_ID, staffCallbackUrl)
+                }
+              >
+                {loadingProvider === WORKFORCE_PROVIDER_ID
+                  ? "Redirecting..."
+                  : "Sign in with a council staff account"}
+              </button>
+            </div>
           )}
 
           {demoCredentialsEnabled && (
@@ -177,9 +187,9 @@ function LoginForm() {
             </form>
           )}
 
-          {(applicantSignInEnabled || demoCredentialsEnabled) && (
+          {demoCredentialsEnabled && (
             <p className="mt-6">
-              Don&apos;t have an account?{" "}
+              Testing the pilot without a seeded account?{" "}
               <Link href="/auth/register">Create an account</Link>
             </p>
           )}

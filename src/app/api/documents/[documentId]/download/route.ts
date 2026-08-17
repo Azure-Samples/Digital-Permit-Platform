@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { contentDispositionHeader } from "@/lib/http/content-disposition";
 
 export async function GET(
   _req: NextRequest,
@@ -35,9 +36,13 @@ export async function GET(
   return new NextResponse(new Uint8Array(doc.fileData), {
     headers: {
       "Content-Type": doc.mimeType,
-      "Content-Disposition": `inline; filename="${doc.originalFilename}"`,
+      "Content-Disposition": contentDispositionHeader(
+        "inline",
+        doc.originalFilename,
+      ),
       "Content-Length": String(doc.fileSizeBytes),
       "Cache-Control": "private, max-age=3600",
+      "X-Content-Type-Options": "nosniff",
     },
   });
 }

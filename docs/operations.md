@@ -149,9 +149,11 @@ Bicep and source control recover infrastructure/configuration definitions. Key V
 
 ## Policy version operations
 
-Policy uploads create inactive versions. Managers and administrators preview the parsed content and activate one version per regime; activation and draft deletion are audited. The previous version remains inactive and can be reactivated without redeployment. Retain the uploaded source document so policy owners can compare extraction and citations with the approved original.
+Policy uploads create inactive versions. Managers and administrators review the retained original and activate one version independently for each supported regime (`licensing_act_2003` and `taxi_private_hire`); activation and serializable draft deletion are audited. The previous version remains inactive and can be reactivated without redeployment. Retain the uploaded source document so policy owners can compare retrieval and citations with the approved original.
 
-Before activation, test section references, cumulative-impact wording, hours, conditions, enforcement and applicant guidance. After activation, run representative Policy Copilot and application-insight checks and retain the evidence with the policy change record.
+Before Licensing Act activation, test cumulative-impact wording, hours, conditions and applicant guidance. Before taxi-policy activation, test fit-and-proper criteria, safeguarding, NR3S, driver/operator requirements, vehicle standards, accessibility, conditions, enforcement and any local legislation. After either activation, run representative Policy Copilot and application-insight checks for that regime and retain the evidence with the policy change record. Cached insights whose policy ID/regime/version no longer match are hidden until regenerated.
+
+When taxi modules are enabled without an active taxi policy, or an active taxi policy exists while all taxi modules are disabled, the Modules and Licensing policies screens show a readiness mismatch. Resolve it deliberately; policy activation does not enable modules and module changes do not activate policy. DfT recommends a cohesive taxi/private-hire policy, but it is not the statutory section 5 Licensing Act statement.
 
 ## Scaling
 

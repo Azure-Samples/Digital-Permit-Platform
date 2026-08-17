@@ -39,7 +39,7 @@ const PROGRESS_STEPS = [
   "Reading the document…",
   "Extracting premises, hours and conditions…",
   "Checking the six mandatory conditions…",
-  "Assessing against the Statement of Licensing Policy…",
+  "Assessing against the relevant council policy…",
   "Finalising the at-a-glance summary…",
 ];
 
@@ -220,7 +220,7 @@ export function LicenceAnalyser() {
                 Licence document (PDF or text, up to 10MB)
               </label>
               <p className="govuk-hint">
-                Upload a premises licence, club premises certificate or similar.
+                Upload a premises, club premises, taxi or private-hire licence document.
               </p>
               <input
                 id="licence-file"
@@ -297,6 +297,7 @@ function AnalysisResultView({
 }) {
   const s = result.summary!;
   const c = result.compliance;
+  const isTaxiDocument = /(?:taxi|private hire|hackney)/i.test(s.documentType);
 
   return (
     <div className="space-y-6">
@@ -332,21 +333,23 @@ function AnalysisResultView({
             <Building2 className="h-5 w-5 text-govuk-blue" /> Key details
           </h3>
           <dl className="govuk-summary-list text-sm">
-            <Row label="Premises" value={s.premisesName} />
+            <Row label={isTaxiDocument ? "Subject" : "Premises"} value={s.premisesName} />
             <Row label="Address" value={s.premisesAddress} />
             <Row label="Licence holder" value={s.licenceHolder} />
-            <Row
-              label="DPS"
-              value={
-                s.designatedPremisesSupervisor?.name
-                  ? `${s.designatedPremisesSupervisor.name}${
-                      s.designatedPremisesSupervisor.personalLicenceNumber
-                        ? ` (${s.designatedPremisesSupervisor.personalLicenceNumber})`
-                        : ""
-                    }`
-                  : null
-              }
-            />
+            {!isTaxiDocument && (
+              <Row
+                label="DPS"
+                value={
+                  s.designatedPremisesSupervisor?.name
+                    ? `${s.designatedPremisesSupervisor.name}${
+                        s.designatedPremisesSupervisor.personalLicenceNumber
+                          ? ` (${s.designatedPremisesSupervisor.personalLicenceNumber})`
+                          : ""
+                      }`
+                    : null
+                }
+              />
+            )}
             <Row label="Opening hours" value={s.openingHours} />
           </dl>
         </section>
@@ -354,7 +357,8 @@ function AnalysisResultView({
         {/* Licensable activities */}
         <section className="bg-white border border-govuk-mid-grey p-5">
           <h3 className="flex items-center gap-2">
-            <Clock className="h-5 w-5 text-govuk-blue" /> Licensable activities &amp; hours
+            <Clock className="h-5 w-5 text-govuk-blue" />
+            {isTaxiDocument ? "Licence scope and restrictions" : "Licensable activities & hours"}
           </h3>
           {s.licensableActivities.length === 0 ? (
             <p className="text-govuk-dark-grey text-sm">None identified.</p>
@@ -376,7 +380,8 @@ function AnalysisResultView({
       </div>
 
       {/* Mandatory conditions */}
-      <section className="bg-white border border-govuk-mid-grey p-5">
+      {!isTaxiDocument && (
+        <section className="bg-white border border-govuk-mid-grey p-5">
         <h3 className="flex items-center gap-2">
           <UserCheck className="h-5 w-5 text-govuk-blue" /> Mandatory conditions
         </h3>
@@ -398,7 +403,8 @@ function AnalysisResultView({
             </li>
           ))}
         </ul>
-      </section>
+        </section>
+      )}
 
       {/* Conditions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -416,7 +422,11 @@ function AnalysisResultView({
       {/* Objective risks */}
       {s.objectiveRisks.length > 0 && (
         <section className="bg-white border border-govuk-mid-grey p-5">
-          <h3>Risk against the licensing objectives</h3>
+          <h3>
+            {isTaxiDocument
+              ? "Public-safety and policy risks"
+              : "Risk against the licensing objectives"}
+          </h3>
           <ul className="space-y-2">
             {s.objectiveRisks.map((r, i) => (
               <li key={i} className="flex items-start gap-2 text-sm">

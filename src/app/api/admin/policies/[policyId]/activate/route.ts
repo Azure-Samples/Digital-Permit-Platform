@@ -28,15 +28,11 @@ export async function POST(
     const status =
       message === "POLICY_NOT_FOUND"
         ? 404
-        : message === "POLICY_GROUNDING_TOO_LARGE"
-          ? 422
-          : message === "POLICY_ACTIVATION_CONFLICT"
+        : message === "POLICY_ACTIVATION_CONFLICT"
             ? 409
             : 500;
     const responseMessage =
-      status === 422
-        ? "This policy is too large for the current full-context grounding mode. Reduce it or configure a retrieval-based policy index."
-        : status === 409
+      status === 409
           ? "Another policy activation completed at the same time. Refresh and try again."
           : "Policy activation failed.";
     return NextResponse.json({ error: responseMessage }, { status });

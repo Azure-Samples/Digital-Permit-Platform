@@ -25,9 +25,26 @@ export async function DELETE(
     return NextResponse.json(policy);
   } catch (error) {
     const message = error instanceof Error ? error.message : "";
-    const status = message === "POLICY_NOT_FOUND" ? 404 : message === "ACTIVE_POLICY_DELETE_FORBIDDEN" ? 409 : 500;
+    const status =
+      message === "POLICY_NOT_FOUND"
+        ? 404
+        : new Set([
+              "ACTIVE_POLICY_DELETE_FORBIDDEN",
+              "POLICY_HISTORY_DELETE_FORBIDDEN",
+              "POLICY_DELETE_CONFLICT",
+            ]).has(message)
+          ? 409
+          : 500;
+    const responseMessage =
+      message === "POLICY_HISTORY_DELETE_FORBIDDEN"
+        ? "A policy version that has been active is retained as council policy history and cannot be deleted."
+        : message === "POLICY_DELETE_CONFLICT"
+          ? "The policy changed while deletion was in progress. Refresh and try again."
+        : status === 409
+          ? "Activate another policy before deleting this version."
+          : "Policy deletion failed.";
     return NextResponse.json(
-      { error: status === 409 ? "Activate another policy before deleting this version." : "Policy deletion failed." },
+      { error: responseMessage },
       { status },
     );
   }

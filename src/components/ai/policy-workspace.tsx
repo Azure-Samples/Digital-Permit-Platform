@@ -4,9 +4,15 @@ import { useState } from "react";
 import { FileSearch, MessagesSquare } from "lucide-react";
 import { LicenceAnalyser } from "./licence-analyser";
 import { ChatPanel } from "./chat-panel";
+import type { PolicyRegime } from "@/lib/policy/regimes";
 
-export function PolicyWorkspace() {
+export function PolicyWorkspace({
+  activeRegimes,
+}: {
+  activeRegimes: PolicyRegime[];
+}) {
   const [tab, setTab] = useState<"analyse" | "ask">("analyse");
+  const taxiPolicyActive = activeRegimes.includes("taxi_private_hire");
 
   return (
     <div>
@@ -30,9 +36,9 @@ export function PolicyWorkspace() {
       ) : (
         <div className="max-w-3xl">
           <p className="text-govuk-dark-grey mb-4">
-            Ask anything about the council&apos;s Statement of Licensing Policy or
-            Licensing Act 2003 procedure. Answers are grounded in the current policy
-            and cite the relevant section.
+            {taxiPolicyActive
+              ? "Ask about premises licensing or taxi/private-hire licensing in the same conversation. Copilot chooses the relevant active policy and cites its source."
+              : "Ask about the council's Licensing Act policy and procedure. Answers use the active statement and cite its source."}
           </p>
           <ChatPanel
             persona="officer"
@@ -40,8 +46,15 @@ export function PolicyWorkspace() {
             suggestions={[
               "What conditions do we expect for late-night off-sales?",
               "How does the cumulative impact policy work?",
-              "When can the police object to a change of DPS?",
-              "What are the mandatory conditions for alcohol sales?",
+              ...(taxiPolicyActive
+                ? [
+                    "What is our fit and proper test for taxi drivers?",
+                    "What vehicle standards apply to private hire applications?",
+                  ]
+                : [
+                    "When can the police object to a change of DPS?",
+                    "What are the mandatory conditions for alcohol sales?",
+                  ]),
             ]}
           />
         </div>

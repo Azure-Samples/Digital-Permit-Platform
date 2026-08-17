@@ -6,19 +6,20 @@ import { Car, Wine, PawPrint, Store, Dice5, ClipboardList, Accessibility, Mail, 
 import { AppTour } from "@/components/tour/app-tour";
 import { TourLauncher } from "@/components/tour/tour-launcher";
 import { isAiConfigured } from "@/lib/ai/openai";
+import { getCouncilProfile } from "@/lib/setup/profile";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const session = await getSessionOrNull();
+  const [session, profile] = await Promise.all([
+    getSessionOrNull(),
+    getCouncilProfile(),
+  ]);
   const user = session?.user;
   const isStaff = user?.role && user.role !== "APPLICANT";
-  const appName =
-    process.env.NEXT_PUBLIC_APP_NAME || "Digital Permit Platform";
-  const supportEmail =
-    process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "licensing@contoso.gov.uk";
-  const supportPhone =
-    process.env.NEXT_PUBLIC_SUPPORT_PHONE || "0345 678 9000";
+  const appName = profile.serviceName;
+  const supportEmail = profile.supportEmail;
+  const supportPhone = profile.supportPhone;
   const aiReady = isAiConfigured();
 
   const navigation = getNavigationForRole(user?.role, "/");
@@ -35,7 +36,11 @@ export default async function HomePage() {
 
       <main className="govuk-main-wrapper" id="main-content">
         {/* Hero */}
-        <section id="tour-hero" className="bg-[#0b2e5e] text-white py-12 -mt-8 mb-8">
+        <section
+          id="tour-hero"
+          className="text-white py-12 -mt-8 mb-8"
+          style={{ backgroundColor: "var(--brand-primary)" }}
+        >
           <div className="govuk-container">
             <p className="uppercase tracking-wide text-sm font-bold text-govuk-light-blue mb-2">
               Digital Permit Platform

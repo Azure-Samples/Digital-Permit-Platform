@@ -38,12 +38,14 @@ export function ChatPanel({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | undefined>();
+  const [conversationAccessKey, setConversationAccessKey] = useState<string | undefined>();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Reset the conversation when the reset key changes.
   useEffect(() => {
     setMessages([]);
     setConversationId(undefined);
+    setConversationAccessKey(undefined);
     setError(null);
   }, [resetKey]);
 
@@ -64,6 +66,7 @@ export function ChatPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           conversationId,
+          conversationAccessKey,
           message,
           persona,
           language,
@@ -73,6 +76,9 @@ export function ChatPanel({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "The assistant could not respond.");
       setConversationId(data.conversationId);
+      if (data.conversationAccessKey) {
+        setConversationAccessKey(data.conversationAccessKey);
+      }
       setMessages((m) => [
         ...m,
         { role: "assistant", content: data.answer, citations: data.citations },
@@ -139,10 +145,11 @@ export function ChatPanel({
                       <div className="flex flex-wrap gap-1">
                         {m.citations.map((c) => (
                           <span
-                            key={c.ref}
+                            key={`${c.regime ?? "policy"}:${c.ref}`}
                             className="text-xs bg-white border border-govuk-mid-grey px-2 py-0.5"
-                            title={c.heading}
+                            title={c.policyTitle ?? c.heading}
                           >
+                            {c.policyTitle ? `${c.policyTitle}: ` : ""}
                             {c.ref} {c.heading}
                           </span>
                         ))}

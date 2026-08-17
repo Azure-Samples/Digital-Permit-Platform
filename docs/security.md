@@ -50,14 +50,18 @@ Complete a data inventory, records-of-processing assessment, DPIA where required
 - applicant identities constrained to `APPLICANT` and workforce roles sourced from signed app-role claims;
 - local registration and password sign-in gated by a server-side demo setting;
 - idempotent identity bootstrap using temporary delegated Graph consent, bounded credentials, no secret output, and no persistent deployment identity with directory write permissions;
-- same-origin validation on policy import, activation, and draft deletion in addition to authenticated role checks;
+- same-origin validation on policy import, activation, draft deletion, AI chat and application-insight generation in addition to authenticated role checks;
 - resource-limited PDF/DOCX policy parsing with archive expansion and extracted-text bounds;
+- sandboxed, same-origin-only inline PDF policy viewing with private/no-store responses and explicit download fallback;
 - server-side session and role checks on protected workflows;
 - bounded JWT session lifetime;
 - file-size and MIME allowlists;
 - generated random object names rather than user-controlled Blob paths;
 - append-only audit records for material operations;
 - AI routes restricted by role where officer access is required;
+- officer conversations bound to the authenticated user; anonymous applicant conversations bound to a high-entropy browser-held access key;
+- per-request policy-regime routing, namespaced citations, cached-insight provenance and stale-cache suppression;
+- bounded in-process throttling for anonymous applicant chat;
 - no raw HTML rendering for AI Markdown;
 - no card-data handling in the included payment patterns;
 - generic synthetic sample data and a visible sample-data warning.
@@ -84,7 +88,7 @@ Complete a data inventory, records-of-processing assessment, DPIA where required
 - JWT sessions can remain valid for up to eight hours after a directory role or assignment changes.
 - An audited administrator workflow for legitimate identity-linking conflicts is not included; conflicts fail closed.
 - Demo users share one generated password when seeding is enabled.
-- API-wide rate limiting is not implemented; `.env` values are placeholders.
+- API-wide distributed rate limiting is not implemented; `.env` values are placeholders. Anonymous applicant chat has a bounded per-replica limiter, which does not replace edge/API-gateway controls across multiple replicas.
 - No WAF, bot protection, DDoS Network Protection plan, API gateway, or Front Door is provisioned.
 - MIME validation does not inspect file signatures or content.
 - Malware scanning is simulated and always returns safe.
@@ -94,7 +98,7 @@ Complete a data inventory, records-of-processing assessment, DPIA where required
 - ACR, Storage, Key Vault, Redis, monitoring, and optional OpenAI public service endpoints remain enabled in the development profile.
 - Storage and OpenAI use managed identity, but service-level network isolation is not included.
 - Uploaded/generated document bytes can be stored in PostgreSQL as well as Blob Storage; retention must cover both.
-- Uploaded policy source files are retained in PostgreSQL for audit and review; restrict policy management to managers/administrators and include these files in retention, malware-scanning, and backup decisions.
+- Uploaded policy source files are retained in PostgreSQL for audit and review; restrict policy management to managers/administrators and include these files in quarantine, malware-scanning, retention and backup decisions. Inline viewing is sandboxed but must remain disabled until an approved scan succeeds in a production design.
 - AI analysis can run in the web process and is not guaranteed across restart or scale events.
 - No central content moderation, prompt-injection detector, or automated AI evaluation pipeline is included.
 - No bank-holiday calendar is applied to SLA calculations.
@@ -177,8 +181,9 @@ The repository includes lockfile installation, npm audit, Dependabot, CodeQL, se
 ### AI
 
 - [ ] Approve the intended uses, users, data, model, region, and human-oversight process.
-- [ ] Replace synthetic policy with approved versioned content.
-- [ ] Review imported policy sections against the original source before activation and test representative citations after every policy change.
+- [ ] Replace synthetic policy with each applicable approved, versioned Licensing Act and taxi/private-hire source.
+- [ ] Confirm the authority's taxi legal framework and local legislation; do not assume the standard 1847/1976 framework is exhaustive.
+- [ ] Review internal indexing against each original source before activation and test regime routing, retrieval recall and representative citations after every policy change.
 - [ ] Evaluate groundedness, citation accuracy, harmful content, prompt injection, multilingual quality, and failure behavior.
 - [ ] Define monitoring, incident response, user feedback, model change control, and rollback.
 - [ ] Ensure AI cannot make or silently alter a statutory decision.

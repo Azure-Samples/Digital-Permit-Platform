@@ -8,7 +8,12 @@ import {
   officerChatPrompt,
   applicantChatPrompt,
 } from "./prompts";
-import { resolveCitations, type PolicyContext } from "./policy-context";
+import {
+  buildCombinedPolicyGroundingText,
+  buildPolicyGroundingText,
+  resolveCitations,
+  type PolicyContext,
+} from "./policy-context";
 import type {
   LicenceSummary,
   ComplianceAssessment,
@@ -131,6 +136,7 @@ export async function assessCompliance(
     typeof subject === "string"
       ? subject.slice(0, MAX_DOC_CHARS)
       : JSON.stringify(subject, null, 2);
+  const groundingText = buildPolicyGroundingText(policyCtx, subjectText);
 
   const res = await openai.chat.completions.create({
     model: AI_MODEL,
@@ -138,7 +144,10 @@ export async function assessCompliance(
     max_tokens: 1600,
     response_format: { type: "json_object" },
     messages: [
-      { role: "system", content: compliancePrompt(policyCtx.groundingText) },
+      {
+        role: "system",
+        content: compliancePrompt(groundingText, policyCtx.regime),
+      },
       {
         role: "user",
         content: `Assess this against the policy:\n\n${subjectText}`,
@@ -187,28 +196,39 @@ export interface ChatResult {
 }
 
 function extractCitations(
-  policyCtx: PolicyContext | null,
+  policyContexts: PolicyContext[],
   answer: string
 ): Citation[] {
-  if (!policyCtx) return [];
-  // Match refs like (5.3), [5.3], "section 5.3", or "5.3" near start of a clause.
   const refs = new Set<string>();
-  const re = /\b(\d{1,2}\.\d{1,2})\b/g;
-  let match = re.exec(answer);
+  const namespaced =
+    /(?:^|[^a-z_0-9])(licensing_act_2003|taxi_private_hire):(\d{1,3}(?:\.\d{1,3}){0,3})\b/gi;
+  let match = namespaced.exec(answer);
   while (match !== null) {
-    refs.add(match[1]);
-    match = re.exec(answer);
+    refs.add(`${match[1]}:${match[2]}`);
+    match = namespaced.exec(answer);
   }
-  return resolveCitations(policyCtx, Array.from(refs));
+  if (policyContexts.length === 1) {
+    const plain = /\b(\d{1,3}(?:\.\d{1,3}){1,3})\b/g;
+    let plainMatch = plain.exec(answer);
+    while (plainMatch !== null) {
+      refs.add(`${policyContexts[0].regime}:${plainMatch[1]}`);
+      plainMatch = plain.exec(answer);
+    }
+  }
+  return resolveCitations(policyContexts, Array.from(refs));
 }
 
 /** Officer / police copilot chat, grounded in policy (+ optional licence). */
 export async function chatOfficer(
-  policyCtx: PolicyContext,
+  policyContexts: PolicyContext[],
   history: ChatTurn[],
   licenceContext?: string
 ): Promise<ChatResult> {
   const openai = getOpenAI();
+  const groundingText = buildCombinedPolicyGroundingText(
+    policyContexts,
+    [...history.slice(-6).map((turn) => turn.content), licenceContext ?? ""].join("\n"),
+  );
   const res = await openai.chat.completions.create({
     model: AI_MODEL,
     temperature: 0.2,
@@ -216,7 +236,7 @@ export async function chatOfficer(
     messages: [
       {
         role: "system",
-        content: officerChatPrompt(policyCtx.groundingText, licenceContext),
+        content: officerChatPrompt(groundingText, licenceContext),
       },
       ...history,
     ],
@@ -224,18 +244,22 @@ export async function chatOfficer(
   const answer = res.choices[0]?.message?.content ?? "";
   return {
     answer,
-    citations: extractCitations(policyCtx, answer),
+    citations: extractCitations(policyContexts, answer),
     tokensUsed: res.usage?.total_tokens ?? 0,
   };
 }
 
 /** Multilingual applicant assistant chat, grounded in policy. */
 export async function chatApplicant(
-  policyCtx: PolicyContext,
+  policyContexts: PolicyContext[],
   history: ChatTurn[],
   langCode: string
 ): Promise<ChatResult> {
   const openai = getOpenAI();
+  const groundingText = buildCombinedPolicyGroundingText(
+    policyContexts,
+    history.slice(-6).map((turn) => turn.content).join("\n"),
+  );
   const res = await openai.chat.completions.create({
     model: AI_MODEL,
     temperature: 0.3,
@@ -244,7 +268,7 @@ export async function chatApplicant(
       {
         role: "system",
         content: applicantChatPrompt(
-          policyCtx.groundingText,
+          groundingText,
           languageName(langCode)
         ),
       },
@@ -255,7 +279,7 @@ export async function chatApplicant(
   return {
     answer,
     // Citations are matched on refs, which are language-agnostic.
-    citations: extractCitations(policyCtx, answer),
+    citations: extractCitations(policyContexts, answer),
     tokensUsed: res.usage?.total_tokens ?? 0,
   };
 }

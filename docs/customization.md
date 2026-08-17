@@ -4,7 +4,22 @@ Customise in layers. Prefer configuration for service rules and small branding c
 
 ## Branding and service content
 
-Set public values through `.env` locally or `azd env set` in Azure:
+Open `/setup` after the application and migrations are running. The wizard lets an adopter:
+
+- enter council, service, and support details;
+- upload a bounded landscape PNG, JPEG, WebP, or passive SVG logo with dimension guidance;
+- hide the separate council-name text when an uploaded full wordmark already contains it;
+- choose an accessible header colour and accent with live desktop/mobile preview;
+- review public impact and explicitly publish the runtime profile;
+- import the secret-free council settings ZIP produced during installation.
+
+The applied `CouncilProfile` is stored in PostgreSQL and takes precedence over public bootstrap environment values. Header, footer, metadata, contacts, sample banner, and homepage branding update without rebuilding the container. Reconfiguration is audited, and changing branding never mutates historic applications.
+
+The wizard deliberately does not expose or edit Azure, hosting, identity, region, AI, demo-data, or deployment settings. Continue to use the separate customer installer and controlled identity/deployment workflows for those operations.
+
+Licence and permit availability is also outside Setup. Use **Admin > Modules** as the single source of truth for enabling, disabling, versioning, and editing service modules.
+
+Before the first profile is applied, these values provide synthetic or organisation-approved fallbacks:
 
 ```bash
 azd env set NEXT_PUBLIC_APP_NAME "Example Council Permit Platform"
@@ -12,14 +27,15 @@ azd env set NEXT_PUBLIC_SUPPORT_EMAIL "permits@example.gov.uk"
 azd env set NEXT_PUBLIC_SUPPORT_PHONE "0300 123 4567"
 ```
 
-Replace:
-
-- `public/contoso_logo.svg` with an approved, accessible organisation mark;
-- `public/favicon.svg` and `src/app/favicon.svg` with approved icons;
-- synthetic footer and policy content;
-- default metadata in `src/app/layout.tsx` where required.
+Replace `public/favicon.svg` and `src/app/favicon.svg` in source only when an approved favicon is required. The in-app logo is private application data and should not be committed to the repository.
 
 Do not add Microsoft or government branding without the necessary trademark and brand approvals. Preserve meaningful alternative text and test mobile header behavior after changing logo dimensions.
+
+### Setup package contract
+
+`setup-manifest.json` uses schema version `1.0`. It contains public council configuration and non-secret deployment intent only. Never add passwords, tokens, client secrets, database URLs, or Key Vault values. The package is an auditable handoff artifact; normal adopters do not need to edit its JSON.
+
+Logo actions are explicit: `keep` during in-place reconfiguration, `replace` with an asset in `assets/`, or `remove`. Use the approved landscape council wordmark: SVG is preferred; raster files should target 1200 x 300 pixels and be at least 600 x 150 pixels. Server validation rejects files over 1 MiB, MIME/signature mismatches, and SVG script, event, embedded active content, external references, entities, or doctypes.
 
 ## Add or change a licence or permit module
 
@@ -117,7 +133,9 @@ Recommended patterns include Defender for Storage malware scanning or a managed 
 
 ## Replace the policy and AI model
 
-The seeded Statement of Licensing Policy is fictional. A manager or administrator should open **Policy Copilot > Manage policy versions**, import the approved PDF, DOCX, Markdown, or text document, review its parsed sections, then activate that version. The previous version remains available for rollback. Test citation mappings before enabling AI for users.
+The seeded Statement of Licensing Policy is fictional. A manager or administrator should open **Licensing policy**, choose **Licensing Act policy**, upload the approved PDF, DOCX, Markdown, or text document, review the retained original, then activate that version. PDFs remain in their original format in the embedded viewer and private download route. Upload each adopted revision as a new draft; previously active statements remain in policy history and can be restored, but cannot be deleted. The page warns when an active policy has expired or is within 90 days of its effective-to date.
+
+If the council enables any taxi/private-hire module, also choose **Taxi and private hire policy** and upload its adopted hackney carriage/private-hire policy where one exists. DfT recommends a cohesive publicly available policy but it is not the statutory Licensing Act statement. The platform therefore reports missing or inverse module-policy readiness without blocking service configuration or automatically changing modules. Confirm whether the authority uses the usual 1847/1976 framework, London/Plymouth legislation, or other local provisions, and amend policy copy and module rules accordingly. Test both Licensing Act and taxi Copilot retrieval and citations before enabling AI for users.
 
 When changing models:
 

@@ -1,10 +1,31 @@
 import { Prisma } from "@prisma/client";
 import type { ImportedPolicySection } from "./import";
 import { prisma } from "@/lib/db";
+import type { PolicyRegime } from "./regimes";
 
-export const MAX_ACTIVE_POLICY_GROUNDING_CHARACTERS = 120_000;
+export type PolicyLifecycleStatus = "active" | "superseded" | "draft";
+export type PolicyReviewStatus = "current" | "expires-soon" | "expired";
+
+export function getPolicyLifecycleStatus(
+  isActive: boolean,
+  hasBeenActive: boolean,
+): PolicyLifecycleStatus {
+  if (isActive) return "active";
+  return hasBeenActive ? "superseded" : "draft";
+}
+
+export function getPolicyReviewStatus(
+  effectiveTo: Date | null,
+  now = new Date(),
+): PolicyReviewStatus {
+  if (!effectiveTo) return "current";
+  if (effectiveTo.getTime() < now.getTime()) return "expired";
+  const reviewWindowEnds = now.getTime() + 90 * 24 * 60 * 60 * 1_000;
+  return effectiveTo.getTime() <= reviewWindowEnds ? "expires-soon" : "current";
+}
 
 export interface PolicyImportInput {
+  regime: PolicyRegime;
   councilName: string;
   title: string;
   versionLabel: string;
@@ -15,21 +36,19 @@ export interface PolicyImportInput {
   sourceMimeType: string;
   sourceFileData: Uint8Array<ArrayBuffer>;
   sourceHash: string;
+  searchIndexTruncated: boolean;
+  searchableCharacters: number;
   uploadedById: string;
   sections: ImportedPolicySection[];
 }
 
 export async function importPolicyVersion(input: PolicyImportInput) {
-  if (input.sections.length === 0) {
-    throw new Error("POLICY_HAS_NO_SECTIONS");
-  }
-
   return prisma.$transaction(async (transaction) => {
     const policy = await transaction.licensingPolicy.create({
       data: {
         councilName: input.councilName,
         title: input.title,
-        regime: "licensing_act_2003",
+        regime: input.regime,
         versionLabel: input.versionLabel,
         effectiveFrom: input.effectiveFrom,
         effectiveTo: input.effectiveTo,
@@ -39,6 +58,8 @@ export async function importPolicyVersion(input: PolicyImportInput) {
         sourceMimeType: input.sourceMimeType,
         sourceFileData: input.sourceFileData,
         sourceHash: input.sourceHash,
+        searchIndexTruncated: input.searchIndexTruncated,
+        searchableCharacters: input.searchableCharacters,
         uploadedById: input.uploadedById,
         sections: {
           create: input.sections.map((section) => ({
@@ -67,6 +88,7 @@ export async function importPolicyVersion(input: PolicyImportInput) {
         entityId: policy.id,
         newValues: {
           title: policy.title,
+          regime: input.regime,
           versionLabel: policy.versionLabel,
           sections: input.sections.length,
           sourceFilename: input.sourceFilename,
@@ -91,18 +113,9 @@ export async function activatePolicyVersion(policyId: string, userId: string) {
               title: true,
               regime: true,
               isActive: true,
-              sections: { select: { content: true } },
             },
           });
           if (!policy) throw new Error("POLICY_NOT_FOUND");
-
-          const groundingCharacters = policy.sections.reduce(
-            (total, section) => total + section.content.length,
-            0,
-          );
-          if (groundingCharacters > MAX_ACTIVE_POLICY_GROUNDING_CHARACTERS) {
-            throw new Error("POLICY_GROUNDING_TOO_LARGE");
-          }
 
           const previous = await transaction.licensingPolicy.findFirst({
             where: { regime: policy.regime, isActive: true },
@@ -130,6 +143,24 @@ export async function activatePolicyVersion(policyId: string, userId: string) {
             data: { isActive: true },
             select: { id: true, title: true, regime: true, isActive: true },
           });
+          if (previous) {
+            await transaction.auditLog.create({
+              data: {
+                userId,
+                action: "policy.supersede",
+                entityType: "LicensingPolicy",
+                entityId: previous.id,
+                previousValues: {
+                  activePolicyId: previous.id,
+                  activePolicyTitle: previous.title,
+                },
+                newValues: {
+                  replacementPolicyId: activated.id,
+                  replacementPolicyTitle: activated.title,
+                },
+              },
+            });
+          }
           await transaction.auditLog.create({
             data: {
               userId,
@@ -162,28 +193,55 @@ export async function activatePolicyVersion(policyId: string, userId: string) {
 }
 
 export async function deletePolicyDraft(policyId: string, userId: string) {
-  return prisma.$transaction(async (transaction) => {
-    const policy = await transaction.licensingPolicy.findUnique({
-      where: { id: policyId },
-      select: { id: true, title: true, versionLabel: true, isActive: true },
-    });
-    if (!policy) throw new Error("POLICY_NOT_FOUND");
-    if (policy.isActive) throw new Error("ACTIVE_POLICY_DELETE_FORBIDDEN");
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await prisma.$transaction(
+        async (transaction) => {
+          const policy = await transaction.licensingPolicy.findUnique({
+            where: { id: policyId },
+            select: { id: true, title: true, versionLabel: true, isActive: true },
+          });
+          if (!policy) throw new Error("POLICY_NOT_FOUND");
+          if (policy.isActive) throw new Error("ACTIVE_POLICY_DELETE_FORBIDDEN");
+          const activation = await transaction.auditLog.findFirst({
+            where: {
+              action: { in: ["policy.activate", "policy.supersede"] },
+              entityType: "LicensingPolicy",
+              entityId: policy.id,
+            },
+            select: { id: true },
+          });
+          if (activation) throw new Error("POLICY_HISTORY_DELETE_FORBIDDEN");
 
-    await transaction.licensingPolicy.delete({ where: { id: policy.id } });
-    await transaction.auditLog.create({
-      data: {
-        userId,
-        action: "policy.delete_draft",
-        entityType: "LicensingPolicy",
-        entityId: policy.id,
-        previousValues: {
-          title: policy.title,
-          versionLabel: policy.versionLabel,
-          status: "draft",
+          const deleted = await transaction.licensingPolicy.deleteMany({
+            where: { id: policy.id, isActive: false },
+          });
+          if (deleted.count !== 1) throw new Error("POLICY_DELETE_CONFLICT");
+          await transaction.auditLog.create({
+            data: {
+              userId,
+              action: "policy.delete_draft",
+              entityType: "LicensingPolicy",
+              entityId: policy.id,
+              previousValues: {
+                title: policy.title,
+                versionLabel: policy.versionLabel,
+                status: "draft",
+              },
+            },
+          });
+          return policy;
         },
-      },
-    });
-    return policy;
-  });
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
+    } catch (error) {
+      const retryable =
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === "P2034";
+      if (retryable && attempt === 0) continue;
+      if (retryable) throw new Error("POLICY_DELETE_CONFLICT");
+      throw error;
+    }
+  }
+  throw new Error("POLICY_DELETE_CONFLICT");
 }
