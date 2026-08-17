@@ -265,7 +265,7 @@ describe("policy import", () => {
 
   it("limits anonymous chat requests within a bounded window", () => {
     clearRateLimitsForTests();
-    const options = { limit: 2, windowMs: 60_000 };
+    const options = { max: 2, windowMs: 60_000 };
     assert.equal(checkRateLimit("anonymous", options, 1_000).allowed, true);
     assert.equal(checkRateLimit("anonymous", options, 1_001).allowed, true);
     const blocked = checkRateLimit("anonymous", options, 1_002);

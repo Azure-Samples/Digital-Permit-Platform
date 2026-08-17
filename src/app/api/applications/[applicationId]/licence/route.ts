@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { generateLicenceDocument } from "@/lib/licence-generator";
 import { contentDispositionHeader } from "@/lib/http/content-disposition";
+import { isTrustedMutationOrigin } from "@/lib/http/origin";
+import { assertUuid } from "@/lib/http/validation";
 
 export async function POST(
   req: NextRequest,
@@ -13,8 +15,17 @@ export async function POST(
     if (!session?.user || !["REVIEWER", "MANAGER", "ADMIN"].includes(session.user.role)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    if (!isTrustedMutationOrigin(req)) {
+      return NextResponse.json(
+        { error: "Invalid request origin." },
+        { status: 403 },
+      );
+    }
 
     const resolvedParams = await params;
+    const invalid = assertUuid(resolvedParams.applicationId, "applicationId");
+    if (invalid) return invalid;
+
     const body = (await req.json().catch(() => ({}))) as {
       templateId?: unknown;
     };
@@ -41,8 +52,13 @@ export async function POST(
       },
     });
   } catch (error) {
-    const message =
-      error instanceof Error ? error.message : "Failed to generate licence";
-    return NextResponse.json({ error: message }, { status: 400 });
+    console.error(
+      "Licence generation error:",
+      error instanceof Error ? error.message : "unknown",
+    );
+    return NextResponse.json(
+      { error: "Failed to generate licence" },
+      { status: 400 },
+    );
   }
 }

@@ -5,6 +5,12 @@ import { prisma } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { isAiConfigured } from "@/lib/ai/openai";
 import { runLicenceAnalysis } from "@/lib/ai/analysis-service";
+import { isTrustedMutationOrigin } from "@/lib/http/origin";
+import {
+  assertContentLength,
+  assertUuid,
+  fileSignatureMatchesMime,
+} from "@/lib/http/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,6 +18,9 @@ export const dynamic = "force-dynamic";
 const STAFF_ROLES = new Set(["REVIEWER", "MANAGER", "ADMIN"]);
 const ALLOWED_TYPES = new Set(["application/pdf", "text/plain", "text/markdown"]);
 const MAX_SIZE_MB = parseInt(process.env.MAX_FILE_SIZE_MB || "10", 10);
+const MAX_UPLOAD_BYTES = MAX_SIZE_MB * 1024 * 1024;
+const MAX_FORMDATA_BYTES = MAX_UPLOAD_BYTES + 128 * 1024;
+const MAX_PASTED_TEXT = 200_000;
 
 // POST — start a new licence analysis. Accepts either a multipart file
 // upload ("file") or a JSON body with pasted text ({ text, title }).
@@ -24,6 +33,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: "Only licensing officers and police can analyse licences." },
       { status: 403 }
+    );
+  }
+  if (!isTrustedMutationOrigin(req)) {
+    return NextResponse.json(
+      { error: "Invalid request origin." },
+      { status: 403 },
     );
   }
   if (!isAiConfigured()) {
@@ -44,11 +59,15 @@ export async function POST(req: NextRequest) {
 
   try {
     if (contentType.includes("multipart/form-data")) {
-      const form = await req.formData();
-      const file = form.get("file") as File | null;
-      applicationId = (form.get("applicationId") as string) || null;
+      const oversized = assertContentLength(req, MAX_FORMDATA_BYTES);
+      if (oversized) return oversized;
 
-      if (!file) {
+      const form = await req.formData();
+      const file = form.get("file");
+      const rawApplicationId = form.get("applicationId");
+      applicationId = typeof rawApplicationId === "string" ? rawApplicationId : null;
+
+      if (!(file instanceof File)) {
         return NextResponse.json({ error: "No file provided." }, { status: 400 });
       }
       if (!ALLOWED_TYPES.has(file.type)) {
@@ -57,21 +76,39 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
-      if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+      if (file.size <= 0 || file.size > MAX_UPLOAD_BYTES) {
         return NextResponse.json(
           { error: `File exceeds the ${MAX_SIZE_MB}MB limit.` },
-          { status: 400 }
+          { status: 413 }
         );
       }
-      fileData = new Uint8Array(await file.arrayBuffer());
+      const buffer = new Uint8Array(await file.arrayBuffer());
+      if (buffer.byteLength !== file.size) {
+        return NextResponse.json(
+          { error: "Uploaded file size did not match its content." },
+          { status: 400 },
+        );
+      }
+      if (
+        file.type === "application/pdf" &&
+        !fileSignatureMatchesMime(buffer.subarray(0, 16), file.type)
+      ) {
+        return NextResponse.json(
+          { error: "The file content does not match the declared type." },
+          { status: 400 },
+        );
+      }
+      fileData = buffer;
       mimeType = file.type;
-      filename = file.name;
-      title = file.name;
+      filename = file.name.replace(/[\r\n\t\0]/g, "").slice(-240);
+      title = filename || "Uploaded licence document";
     } else {
       const body = await req.json();
-      pastedText = (body.text as string)?.trim() || null;
-      applicationId = (body.applicationId as string) || null;
-      if (body.title) title = String(body.title).slice(0, 200);
+      const rawText = typeof body?.text === "string" ? body.text : "";
+      pastedText = rawText.trim().slice(0, MAX_PASTED_TEXT) || null;
+      const rawApplicationId = body?.applicationId;
+      applicationId = typeof rawApplicationId === "string" ? rawApplicationId : null;
+      if (typeof body?.title === "string") title = body.title.slice(0, 200);
       if (!pastedText || pastedText.length < 40) {
         return NextResponse.json(
           { error: "Please paste at least a few lines of the licence text." },
@@ -82,6 +119,11 @@ export async function POST(req: NextRequest) {
     }
   } catch {
     return NextResponse.json({ error: "Malformed request." }, { status: 400 });
+  }
+
+  if (applicationId !== null) {
+    const invalid = assertUuid(applicationId, "applicationId");
+    if (invalid) return invalid;
   }
 
   const analysis = await prisma.licenceAnalysis.create({

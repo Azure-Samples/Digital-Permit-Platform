@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { assertUuid } from "@/lib/http/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,6 +20,9 @@ export async function GET(
   }
 
   const resolvedParams = await params;
+  const invalid = assertUuid(resolvedParams.id, "id");
+  if (invalid) return invalid;
+
   const analysis = await prisma.licenceAnalysis.findUnique({
     where: { id: resolvedParams.id },
     select: {

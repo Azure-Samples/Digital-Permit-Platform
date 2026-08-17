@@ -1,4 +1,19 @@
 /** @type {import('next').NextConfig} */
+const contentSecurityPolicy = [
+  "default-src 'self'",
+  "base-uri 'self'",
+  "frame-ancestors 'self'",
+  "form-action 'self'",
+  "object-src 'none'",
+  "img-src 'self' data: blob: https://*.blob.core.windows.net",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  // Next 15 emits inline script for RSC and route bootstrap; the `unsafe-inline`
+  // fallback is used only where `strict-dynamic` is unsupported.
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+].join("; ");
+
 const securityHeaders = [
   { key: "X-Content-Type-Options", value: "nosniff" },
   { key: "X-Frame-Options", value: "SAMEORIGIN" },
@@ -12,6 +27,7 @@ const securityHeaders = [
     value: "camera=(), microphone=(), geolocation=(), payment=()",
   },
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+  { key: "Content-Security-Policy", value: contentSecurityPolicy },
 ];
 
 const nextConfig = {

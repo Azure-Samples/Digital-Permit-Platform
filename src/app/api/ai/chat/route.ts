@@ -28,13 +28,21 @@ import {
 } from "@/lib/ai/policy-assistant";
 import { licenceContextFromSummary } from "@/lib/ai/analysis-service";
 import type { LicenceSummary } from "@/lib/ai/types";
-import { checkRateLimit } from "@/lib/http/rate-limit";
+import { assertUuid } from "@/lib/http/validation";
+import {
+  checkRateLimit,
+  requestClientAddress,
+} from "@/lib/http/rate-limit";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const STAFF_ROLES = new Set(["REVIEWER", "MANAGER", "ADMIN"]);
-const MAX_HISTORY = 16; // cap turns sent to the model
+const MAX_HISTORY = 16;
+const MAX_MESSAGE_CHARS = 2000;
+const LANGUAGE_PATTERN = /^[a-z]{2}(?:-[A-Za-z0-9]{2,8})?$/;
+const APPLICANT_LIMIT = { windowMs: 60_000, max: 10 };
+const OFFICER_LIMIT = { windowMs: 60_000, max: 30 };
 
 export async function POST(req: NextRequest) {
   if (!isTrustedMutationOrigin(req)) {
@@ -44,6 +52,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { error: "AI is not configured on this environment." },
       { status: 503 }
+    );
+  }
+
+  if (!isTrustedMutationOrigin(req)) {
+    return NextResponse.json(
+      { error: "Invalid request origin." },
+      { status: 403 },
     );
   }
 
@@ -64,17 +79,31 @@ export async function POST(req: NextRequest) {
   }
 
   const persona = body.persona === "officer" ? "officer" : "applicant";
-  const message = (body.message ?? "").trim();
-  const language = body.language || "en";
+  const message = (typeof body.message === "string" ? body.message : "").trim();
+  const language =
+    typeof body.language === "string" && LANGUAGE_PATTERN.test(body.language)
+      ? body.language
+      : "en";
 
   if (!message) {
     return NextResponse.json({ error: "Message is required." }, { status: 400 });
   }
-  if (message.length > 2000) {
+  if (message.length > MAX_MESSAGE_CHARS) {
     return NextResponse.json(
-      { error: "Message is too long (2000 character limit)." },
+      {
+        error: `Message is too long (${MAX_MESSAGE_CHARS} character limit).`,
+      },
       { status: 400 }
     );
+  }
+
+  if (body.conversationId !== undefined) {
+    const invalid = assertUuid(body.conversationId, "conversationId");
+    if (invalid) return invalid;
+  }
+  if (body.analysisId !== undefined) {
+    const invalid = assertUuid(body.analysisId, "analysisId");
+    if (invalid) return invalid;
   }
 
   // Officer copilot is staff-only; the applicant assistant is open to the public.
@@ -85,26 +114,32 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
-  } else if (!session?.user) {
-    const clientAddress =
-      req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      req.headers.get("x-real-ip") ||
-      "unknown";
-    const rateLimit = checkRateLimit(`applicant-chat:${clientAddress}`, {
-      limit: 20,
-      windowMs: 60_000,
-    });
-    if (!rateLimit.allowed) {
-      return NextResponse.json(
-        { error: "Too many assistant requests. Wait a moment and try again." },
-        {
-          status: 429,
-          headers: { "Retry-After": String(rateLimit.retryAfterSeconds) },
+  }
+  // Rate-limit: the applicant chat is anonymous, so key by client address;
+  // the officer copilot is authenticated, so key by user id.
+  const clientAddress = requestClientAddress(req);
+  const rateKey =
+    persona === "officer"
+      ? `chat:officer:${session?.user?.id ?? clientAddress}`
+      : `chat:applicant:${clientAddress}`;
+  const rateLimit = checkRateLimit(
+    rateKey,
+    persona === "officer" ? OFFICER_LIMIT : APPLICANT_LIMIT,
+  );
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: "Too many requests. Please wait a moment before trying again." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(rateLimit.retryAfterSeconds),
+          "X-RateLimit-Reset": String(rateLimit.resetEpochSeconds),
         },
-      );
-    }
+      },
+    );
   }
 
+  // ── Load or create the conversation ────────────────────────
   let conversation = body.conversationId
     ? await prisma.assistantConversation.findUnique({
         where: { id: body.conversationId },
@@ -283,8 +318,12 @@ export async function POST(req: NextRequest) {
       languageName: languageName(language),
     });
   } catch (err) {
+    console.error(
+      "AI chat error:",
+      err instanceof Error ? err.message : "unknown",
+    );
     return NextResponse.json(
-      { error: `The assistant could not respond: ${(err as Error).message}` },
+      { error: "The assistant could not respond." },
       { status: 502 }
     );
   }

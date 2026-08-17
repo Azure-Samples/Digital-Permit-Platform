@@ -23,7 +23,7 @@ type AuthResult =
   | { ok: false; response: NextResponse };
 
 // Generous per-minute budget for server-to-server polling.
-const RATE_LIMIT = { limit: 120, windowMs: 60_000 };
+const RATE_LIMIT = { max: 120, windowMs: 60_000 };
 
 function unauthorized(message: string): AuthResult {
   return {

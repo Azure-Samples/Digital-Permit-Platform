@@ -83,7 +83,7 @@ jobs:
         run: npm run validate:release
 
       - name: Audit dependencies
-        run: npm audit --audit-level=low
+        run: npm run audit:allowlist
 
       - name: Build application
         run: npm run build

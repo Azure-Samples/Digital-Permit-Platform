@@ -8,6 +8,7 @@ import { runApplicationInsight } from "@/lib/ai/analysis-service";
 import { isTrustedMutationOrigin } from "@/lib/http/origin";
 import { policyRegimeForModule } from "@/lib/policy/regimes";
 import { isPolicyInsightCurrent } from "@/lib/policy/insight-provenance";
+import { assertUuid } from "@/lib/http/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,13 +22,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const applicationId = req.nextUrl.searchParams.get("applicationId");
-  if (!applicationId) {
-    return NextResponse.json({ error: "applicationId required" }, { status: 400 });
-  }
+  const invalid = assertUuid(applicationId, "applicationId");
+  if (invalid) return invalid;
   const [insight, application] = await Promise.all([
-    prisma.applicationPolicyInsight.findUnique({ where: { applicationId } }),
+    prisma.applicationPolicyInsight.findUnique({
+      where: { applicationId: applicationId as string },
+    }),
     prisma.application.findUnique({
-      where: { id: applicationId },
+      where: { id: applicationId as string },
       select: {
         module: { select: { category: true, moduleKey: true } },
       },
@@ -68,7 +70,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   if (!isTrustedMutationOrigin(req)) {
-    return NextResponse.json({ error: "Invalid request origin." }, { status: 403 });
+    return NextResponse.json(
+      { error: "Invalid request origin." },
+      { status: 403 },
+    );
   }
   if (!isAiConfigured()) {
     return NextResponse.json(
@@ -77,15 +82,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let applicationId: string | undefined;
+  let payload: { applicationId?: unknown } = {};
   try {
-    ({ applicationId } = await req.json());
+    payload = (await req.json()) ?? {};
   } catch {
     return NextResponse.json({ error: "Malformed request." }, { status: 400 });
   }
-  if (!applicationId) {
-    return NextResponse.json({ error: "applicationId required" }, { status: 400 });
-  }
+  const invalidId = assertUuid(payload.applicationId, "applicationId");
+  if (invalidId) return invalidId;
+  const applicationId = payload.applicationId as string;
 
   const application = await prisma.application.findUnique({
     where: { id: applicationId },
