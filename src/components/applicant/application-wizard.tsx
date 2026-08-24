@@ -46,6 +46,8 @@ export function ApplicationWizard({
   const [answers, setAnswers] = useState<Record<string, unknown>>(savedAnswers);
   const [uploadedDocuments, setUploadedDocuments] = useState(initialDocuments);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState<WizardStep>("form");
   const [completedSteps, setCompletedSteps] = useState<string[]>([]);
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
@@ -80,17 +82,34 @@ export function ApplicationWizard({
 
   async function handleSave(sectionKey: string, sectionAnswers: Record<string, unknown>) {
     setSaving(true);
-    const updated = { ...answers, [sectionKey]: sectionAnswers };
-    setAnswers(updated);
+    setSaveError(null);
+    setSaveMessage(null);
 
     try {
-      await fetch(`/api/applications/${applicationId}/answers`, {
+      const response = await fetch(`/api/applications/${applicationId}/answers`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sectionKey, answers: sectionAnswers }),
       });
-    } catch (err) {
-      console.error("Failed to save:", err);
+
+      const result = (await response.json()) as {
+        answers?: Record<string, unknown>;
+        error?: string;
+      };
+      if (!response.ok || !result.answers) {
+        throw new Error(result.error || "The application could not be saved.");
+      }
+
+      setAnswers(result.answers);
+      setSaveMessage("Your progress has been saved.");
+      return true;
+    } catch (error) {
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : "The application could not be saved. Try again.",
+      );
+      return false;
     } finally {
       setSaving(false);
     }
@@ -235,6 +254,8 @@ export function ApplicationWizard({
                 isFirstSection={currentSectionIndex === 0}
                 isLastSection={currentSectionIndex === formSchema.length - 1}
                 saving={saving}
+                saveError={saveError}
+                saveMessage={saveMessage}
               />
             )}
 

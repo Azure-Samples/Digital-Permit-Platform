@@ -5,6 +5,10 @@ import { prisma } from "@/lib/db";
 import { writeAuditLog } from "@/lib/audit";
 import { isAiConfigured } from "@/lib/ai/openai";
 import { runApplicationInsight } from "@/lib/ai/analysis-service";
+import { isTrustedMutationOrigin } from "@/lib/http/origin";
+import { policyRegimeForModule } from "@/lib/policy/regimes";
+import { isPolicyInsightCurrent } from "@/lib/policy/insight-provenance";
+import { assertUuid } from "@/lib/http/validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,13 +22,45 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const applicationId = req.nextUrl.searchParams.get("applicationId");
-  if (!applicationId) {
-    return NextResponse.json({ error: "applicationId required" }, { status: 400 });
+  const invalid = assertUuid(applicationId, "applicationId");
+  if (invalid) return invalid;
+  const [insight, application] = await Promise.all([
+    prisma.applicationPolicyInsight.findUnique({
+      where: { applicationId: applicationId as string },
+    }),
+    prisma.application.findUnique({
+      where: { id: applicationId as string },
+      select: {
+        module: { select: { category: true, moduleKey: true } },
+      },
+    }),
+  ]);
+  if (!application) {
+    return NextResponse.json({ error: "Application not found" }, { status: 404 });
   }
-  const insight = await prisma.applicationPolicyInsight.findUnique({
-    where: { applicationId },
+  const policyRegime = policyRegimeForModule(
+    application.module.category,
+    application.module.moduleKey,
+  );
+  const activePolicy = await prisma.licensingPolicy.findFirst({
+    where: { regime: policyRegime, isActive: true },
+    select: { id: true, regime: true, versionLabel: true },
   });
-  return NextResponse.json({ insight });
+  const current = isPolicyInsightCurrent(
+    insight,
+    activePolicy
+      ? {
+          id: activePolicy.id,
+          regime: policyRegime,
+          versionLabel: activePolicy.versionLabel,
+        }
+      : null,
+  );
+  return NextResponse.json({
+    insight: current ? insight : null,
+    stale: Boolean(insight && !current),
+    policyRegime,
+  });
 }
 
 // POST — start (or refresh) generation of the policy insight.
@@ -33,6 +69,12 @@ export async function POST(req: NextRequest) {
   if (!session?.user || !STAFF_ROLES.has(session.user.role)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+  if (!isTrustedMutationOrigin(req)) {
+    return NextResponse.json(
+      { error: "Invalid request origin." },
+      { status: 403 },
+    );
+  }
   if (!isAiConfigured()) {
     return NextResponse.json(
       { error: "AI is not configured on this environment." },
@@ -40,15 +82,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let applicationId: string | undefined;
+  let payload: { applicationId?: unknown } = {};
   try {
-    ({ applicationId } = await req.json());
+    payload = (await req.json()) ?? {};
   } catch {
     return NextResponse.json({ error: "Malformed request." }, { status: 400 });
   }
-  if (!applicationId) {
-    return NextResponse.json({ error: "applicationId required" }, { status: 400 });
-  }
+  const invalidId = assertUuid(payload.applicationId, "applicationId");
+  if (invalidId) return invalidId;
+  const applicationId = payload.applicationId as string;
 
   const application = await prisma.application.findUnique({
     where: { id: applicationId },
@@ -69,6 +111,9 @@ export async function POST(req: NextRequest) {
       status: "PROCESSING",
       errorMessage: null,
       generatedById: session.user.id,
+      policyId: null,
+      policyRegime: null,
+      policyVersionLabel: null,
     },
     select: { id: true, status: true },
   });

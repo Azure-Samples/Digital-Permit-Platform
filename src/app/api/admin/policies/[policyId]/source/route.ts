@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { assertUuid } from "@/lib/http/validation";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ policyId: string }> },
 ) {
   const session = await getServerSession(authOptions);
@@ -12,6 +13,9 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const { policyId } = await params;
+  const invalid = assertUuid(policyId, "policyId");
+  if (invalid) return invalid;
+
   const policy = await prisma.licensingPolicy.findUnique({
     where: { id: policyId },
     select: {
@@ -30,13 +34,25 @@ export async function GET(
   ) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  const inline =
+    policy.sourceMimeType === "application/pdf" &&
+    new URL(request.url).searchParams.get("view") === "inline";
 
   return new NextResponse(policy.sourceFileData, {
     headers: {
       "Content-Type": policy.sourceMimeType || "application/octet-stream",
-      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(policy.sourceFilename)}`,
+      "Content-Disposition": `${inline ? "inline" : "attachment"}; filename*=UTF-8''${encodeURIComponent(policy.sourceFilename)}`,
       "Cache-Control": "private, no-store",
       "X-Content-Type-Options": "nosniff",
+      "Cross-Origin-Resource-Policy": "same-origin",
+      "X-Frame-Options": "SAMEORIGIN",
+      "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=()",
+      ...(inline
+        ? {
+            "Content-Security-Policy":
+              "default-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'self'; sandbox allow-scripts allow-downloads",
+          }
+        : {}),
     },
   });
 }

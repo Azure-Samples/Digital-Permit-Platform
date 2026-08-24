@@ -13,6 +13,8 @@
     --govuk-mid-grey: #b1b4b6;
     --govuk-light-grey: #f3f2f1;
     --govuk-white: #ffffff;
+    --brand-primary: #0b2e5e;
+    --brand-accent: #009fe3;
   }
 
   html {
@@ -322,4 +324,93 @@
 .driver-active-element {
   outline: 3px solid #ffdd00 !important;
   outline-offset: 2px;
+}
+
+/* Embedded setup uses the same visual language as the admin workspace. */
+.setup-wizard--embedded h1 {
+  color: var(--govuk-black);
+  font-size: 2rem;
+  line-height: 1.15;
+  letter-spacing: 0;
+}
+
+.setup-wizard--embedded h2 {
+  color: var(--govuk-black);
+  font-size: 1.5rem;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.setup-wizard--embedded h3 {
+  color: var(--govuk-black);
+  font-size: 1.1875rem;
+  line-height: 1.3;
+  letter-spacing: 0;
+}
+
+.setup-wizard--embedded [class*="tracking-"] {
+  letter-spacing: 0;
+}
+
+.setup-wizard--embedded .setup-field-label {
+  color: var(--govuk-black);
+  font-size: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.setup-wizard--embedded .setup-field-hint {
+  color: var(--govuk-dark-grey);
+  font-size: 1rem;
+}
+
+.setup-wizard--embedded .setup-text-input {
+  border-color: var(--govuk-black);
+  color: var(--govuk-black);
+  padding: 0.5rem;
+}
+
+.setup-wizard--embedded [class~="text-[#102a43]"],
+.setup-wizard--embedded [class~="text-[#243b53]"] {
+  color: var(--govuk-black);
+}
+
+.setup-wizard--embedded [class~="text-[#334e68]"],
+.setup-wizard--embedded [class~="text-[#486581]"],
+.setup-wizard--embedded [class~="text-[#52606d]"],
+.setup-wizard--embedded [class~="text-[#627d98]"] {
+  color: var(--govuk-dark-grey);
+}
+
+.setup-wizard--embedded [class~="text-[#e35205]"] {
+  color: var(--govuk-blue);
+}
+
+.setup-wizard--embedded [class~="border-[#7b8794]"] {
+  border-color: var(--govuk-black);
+}
+
+.setup-wizard--embedded [class~="border-[#9fb3c8]"],
+.setup-wizard--embedded [class~="border-[#bcccdc]"],
+.setup-wizard--embedded [class~="border-[#d9e2ec]"] {
+  border-color: var(--govuk-mid-grey);
+}
+
+.setup-wizard--embedded [class~="border-[#e35205]"] {
+  border-color: var(--govuk-blue);
+}
+
+.setup-wizard--embedded [class~="border-[#f47738]"] {
+  border-color: #ffdd00;
+}
+
+.setup-wizard--embedded [class~="bg-[#e8edf2]"],
+.setup-wizard--embedded [class~="bg-[#e8f1f8]"],
+.setup-wizard--embedded [class~="bg-[#f5f7fa]"],
+.setup-wizard--embedded [class~="bg-[#f5f9fc]"] {
+  background-color: var(--govuk-light-grey);
+}
+
+.setup-wizard--embedded [class~="hover:bg-[#f5f7fa]"]:hover,
+.setup-wizard--embedded [class~="hover:bg-[#f5f9fc]"]:hover {
+  background-color: var(--govuk-light-grey);
 }

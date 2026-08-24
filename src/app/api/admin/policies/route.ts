@@ -6,9 +6,10 @@ import { z } from "zod";
 import { authOptions } from "@/lib/auth";
 import { isTrustedMutationOrigin } from "@/lib/http/origin";
 import {
-  extractPolicyDocumentText,
+  extractPolicyDocument,
   MAX_POLICY_FILE_SIZE_MB,
   POLICY_UPLOAD_MIME_TYPES,
+  PolicyTextUnavailableError,
   sanitizePolicyFilename,
 } from "@/lib/policy/document";
 import {
@@ -16,12 +17,20 @@ import {
   splitPolicyIntoSections,
 } from "@/lib/policy/import";
 import { importPolicyVersion } from "@/lib/policy/service";
+import {
+  DEFAULT_POLICY_REGIME,
+  POLICY_REGIMES,
+} from "@/lib/policy/regimes";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const policyMetadataSchema = z
   .object({
+    regime: z.preprocess(
+      (value) => value || DEFAULT_POLICY_REGIME,
+      z.enum(POLICY_REGIMES),
+    ),
     councilName: z.string().trim().min(2).max(120),
     title: z.string().trim().min(5).max(200),
     versionLabel: z.string().trim().min(1).max(80),
@@ -70,6 +79,7 @@ export async function POST(request: NextRequest) {
     }
 
     const parsed = policyMetadataSchema.safeParse({
+      regime: form.get("regime"),
       councilName: form.get("councilName"),
       title: form.get("title"),
       versionLabel: form.get("versionLabel"),
@@ -86,18 +96,22 @@ export async function POST(request: NextRequest) {
 
     const sourceFilename = sanitizePolicyFilename(file.name);
     const sourceFileData = Buffer.from(await file.arrayBuffer());
-    const extractedText = await extractPolicyDocumentText(
-      sourceFileData,
-      sourceFilename,
-      file.type,
-    );
-    const sections = splitPolicyIntoSections(extractedText);
-    if (sections.length === 0) {
-      return NextResponse.json(
-        { error: "No policy sections could be extracted." },
-        { status: 422 },
+    let extractedText = "";
+    let searchIndexTruncated = false;
+    let extractionWarning: string | null = null;
+    try {
+      const extraction = await extractPolicyDocument(
+        sourceFileData,
+        sourceFilename,
+        file.type,
       );
+      extractedText = extraction.text;
+      searchIndexTruncated = extraction.searchIndexTruncated;
+    } catch (error) {
+      if (!(error instanceof PolicyTextUnavailableError)) throw error;
+      extractionWarning = error.message;
     }
+    const sections = extractedText ? splitPolicyIntoSections(extractedText) : [];
 
     const policy = await importPolicyVersion({
       ...parsed.data,
@@ -105,22 +119,31 @@ export async function POST(request: NextRequest) {
       effectiveTo: parsed.data.effectiveTo
         ? new Date(`${parsed.data.effectiveTo}T23:59:59.999Z`)
         : undefined,
-      summary: parsed.data.summary || buildPolicySummary(extractedText),
+      summary:
+        parsed.data.summary ||
+        (extractedText
+          ? buildPolicySummary(extractedText)
+          : "The original statement document is retained. No searchable text was extracted for Policy Copilot."),
       sourceFilename,
       sourceMimeType: file.type,
       sourceFileData: Uint8Array.from(sourceFileData),
       sourceHash: createHash("sha256").update(sourceFileData).digest("hex"),
+      searchIndexTruncated,
+      searchableCharacters: extractedText.length,
       uploadedById: session.user.id,
       sections,
     });
-    return NextResponse.json(policy, { status: 201 });
+    return NextResponse.json(
+      { ...policy, extractionWarning, searchIndexTruncated },
+      { status: 201 },
+    );
   } catch (error) {
     if (
       error instanceof Prisma.PrismaClientKnownRequestError &&
       error.code === "P2002"
     ) {
       return NextResponse.json(
-        { error: "This exact policy file has already been imported." },
+        { error: "This exact policy file has already been imported for this policy area." },
         { status: 409 },
       );
     }

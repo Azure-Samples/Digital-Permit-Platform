@@ -17,17 +17,20 @@ const connection = getRedisConnectionOptions();
 const notificationWorker = new Worker(
   "notifications",
   async (job: Job<NotificationJobData>) => {
-    const { type, userId, subject, body } = job.data;
+    const { type, userId, body } = job.data;
 
     if (type === "email") {
-      // In production: integrate with SMTP / Azure Communication Services
-      console.log(`[EMAIL] To: ${userId} | Subject: ${subject}`);
-      console.log(`  Body: ${body.substring(0, 200)}...`);
+      // In production: integrate with SMTP / Azure Communication Services.
+      // We intentionally do not log recipient identifiers, subjects, or body
+      // content to avoid leaking PII into stdout / observability sinks.
+      console.log(
+        `[EMAIL] queued job=${job.id ?? "-"} bodyBytes=${body.length}`,
+      );
     } else {
       // In-app notification – write to DB
       // Import would cause circular dep in a real setup;
       // in production, use a shared DB module
-      console.log(`[IN-APP] To: ${userId} | ${subject}`);
+      console.log(`[IN-APP] queued job=${job.id ?? "-"}`);
     }
 
     return { sent: true, type, userId };
@@ -77,11 +80,11 @@ const scanWorker = new Worker(
 const reminderWorker = new Worker(
   "reminders",
   async (job: Job<ReminderJobData>) => {
-    const { type, applicationId, userId, message } = job.data;
+    const { type, applicationId } = job.data;
+    // Do not log userId or free-text message to avoid PII in worker stdout.
     console.log(
-      `[REMINDER] Type: ${type} | App: ${applicationId} | User: ${userId}`
+      `[REMINDER] type=${type} application=${applicationId}`
     );
-    console.log(`  Message: ${message}`);
 
     return { reminded: true, type };
   },

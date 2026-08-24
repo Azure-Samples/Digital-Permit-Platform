@@ -207,9 +207,10 @@ async function main() {
     ? "Contoso Council"
     : "Contoso Council";
 
-  // Deactivate any existing active policy so there is a single source of truth.
+  // Enforce a single active policy PER REGIME only. Any active taxi /
+  // private-hire policy (a different regime) is deliberately left untouched.
   await prisma.licensingPolicy.updateMany({
-    where: { isActive: true },
+    where: { regime: "licensing_act_2003", isActive: true },
     data: { isActive: false },
   });
 

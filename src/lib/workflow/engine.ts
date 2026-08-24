@@ -224,14 +224,26 @@ export async function submitApplication(
     ? STAGE_TYPE_TO_STATUS[firstStage.type] || "SUBMITTED"
     : "SUBMITTED";
 
-  await prisma.application.update({
-    where: { id: applicationId },
+  // Optimistic lock: only the first concurrent caller flips the row out of
+  // DRAFT. Later callers see count = 0 and are told the application is not
+  // available to submit; they must not re-run workflow events or auditing.
+  const claimed = await prisma.application.updateMany({
+    where: { id: applicationId, status: "DRAFT" },
     data: {
       status: newStatus,
       currentStage: firstStage?.key ?? null,
       submittedAt: new Date(),
     },
   });
+  if (claimed.count === 0) {
+    return {
+      success: false,
+      fromStage: app.currentStage,
+      toStage: "",
+      newStatus: app.status,
+      error: "Application has already been submitted",
+    };
+  }
 
   if (firstStage) {
     await prisma.workflowEvent.create({

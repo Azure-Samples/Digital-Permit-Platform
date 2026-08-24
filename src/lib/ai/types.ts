@@ -74,4 +74,6 @@ export interface ComplianceAssessment {
 export interface Citation {
   ref: string;
   heading: string;
+  policyTitle?: string;
+  regime?: "licensing_act_2003" | "taxi_private_hire";
 }

@@ -4,9 +4,14 @@ import { Sparkles, BookOpen, Settings } from "lucide-react";
 import { GovHeader, getNavigationForRole } from "@/components/ui/header";
 import { GovFooter } from "@/components/ui/footer";
 import { requireRole } from "@/lib/permissions";
-import { getActivePolicyContext } from "@/lib/ai/policy-context";
 import { isAiConfigured } from "@/lib/ai/openai";
 import { PolicyWorkspace } from "@/components/ai/policy-workspace";
+import { prisma } from "@/lib/db";
+import {
+  isPolicyRegime,
+  POLICY_REGIME_CONFIG,
+  POLICY_REGIMES,
+} from "@/lib/policy/regimes";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +21,25 @@ export default async function PolicyCopilotPage() {
   );
   if (!session) redirect("/auth/login?callbackUrl=/staff/policy");
 
-  const policy = await getActivePolicyContext();
+  const activePolicies = await prisma.licensingPolicy.findMany({
+    where: { isActive: true, regime: { in: [...POLICY_REGIMES] } },
+    select: {
+      id: true,
+      regime: true,
+      councilName: true,
+      title: true,
+      versionLabel: true,
+      _count: { select: { sections: true } },
+    },
+    orderBy: { effectiveFrom: "desc" },
+  });
+  const policies = activePolicies.filter(
+    (policy): policy is typeof policy & { regime: "licensing_act_2003" | "taxi_private_hire" } =>
+      isPolicyRegime(policy.regime),
+  );
+  const taxiPolicyActive = policies.some(
+    (policy) => policy.regime === "taxi_private_hire",
+  );
   const aiReady = isAiConfigured();
   const canManagePolicy = new Set(["MANAGER", "ADMIN"]).has(session.user.role);
 
@@ -45,46 +68,61 @@ export default async function PolicyCopilotPage() {
             <h1 className="!mb-0">Policy Copilot</h1>
           </div>
           <p className="text-govuk-dark-grey max-w-3xl mb-6">
-            Upload or paste a licence and get an at-a-glance summary — holder, hours,
-            licensable activities, mandatory conditions and risks — with an automatic
-            check against the council&apos;s licensing policy. Built for licensing
-            officers and the police.
+            {taxiPolicyActive
+              ? "Analyse a licence or ask one question across the council's active Licensing Act and taxi/private-hire policies. Policy Copilot selects the relevant source automatically and keeps each legal regime distinct."
+              : "Analyse a licence or ask questions against the council's active Licensing Act policy. Add a taxi/private-hire policy if the council offers those services."}
           </p>
 
-          {policy ? (
-            <div className="bg-white border border-govuk-mid-grey p-4 mb-6 flex items-start gap-3">
-              <BookOpen className="h-5 w-5 text-govuk-blue shrink-0 mt-1" />
-              <div>
-                <p className="font-bold">
-                  Grounded in: {policy.title}
-                </p>
-                <p className="text-sm text-govuk-dark-grey">
-                  {policy.councilName} · in force {policy.versionLabel} ·{" "}
-                  {policy.sections.length} sections.{" "}
-                  <Link href="/staff/policy/document" className="text-sm">
-                    View the policy
-                  </Link>
-                  {canManagePolicy && (
-                    <>
-                      {" · "}
-                      <Link href="/staff/policy/manage" className="text-sm">
-                        Manage policies
+          {policies.length > 0 ? (
+            <div className="mb-6 grid gap-3 lg:grid-cols-2">
+              {policies.map((policy) => (
+                <div
+                  key={policy.id}
+                  className="flex items-start gap-3 border border-govuk-mid-grey bg-white p-4"
+                >
+                  <BookOpen className="mt-1 h-5 w-5 shrink-0 text-govuk-blue" />
+                  <div>
+                    <p className="text-xs font-bold uppercase text-govuk-dark-grey">
+                      {POLICY_REGIME_CONFIG[policy.regime].shortLabel}
+                    </p>
+                    <p className="font-bold">{policy.title}</p>
+                    <p className="text-sm text-govuk-dark-grey">
+                      In force {policy.versionLabel} ·{" "}
+                      {policy._count.sections > 0
+                        ? "searchable"
+                        : "original document only"}{" "}
+                      ·{" "}
+                      <Link
+                        href={`/staff/policy/document?regime=${policy.regime}`}
+                        className="text-sm"
+                      >
+                        View policy
                       </Link>
-                    </>
-                  )}
-                </p>
-              </div>
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
           ) : (
             <div className="govuk-warning-text mb-6">
               <span className="text-govuk-red font-bold text-2xl">!</span>
               <p>
-                No Statement of Licensing Policy is active.{" "}
+                No licensing policy is active.{" "}
                 {canManagePolicy ? (
-                  <Link href="/staff/policy/manage">Import and activate a policy</Link>
+                  <Link href="/staff/policy/manage">Upload and activate the council statement</Link>
                 ) : (
                   "Ask a manager or administrator to import one."
                 )}
+              </p>
+            </div>
+          )}
+
+          {policies.some((policy) => policy._count.sections === 0) && (
+            <div className="govuk-warning-text mb-6">
+              <span className="text-govuk-red font-bold text-2xl">!</span>
+              <p>
+                One or more active policies have no searchable text. Staff can still
+                view or download those originals, but Copilot cannot use them.
               </p>
             </div>
           )}
@@ -106,12 +144,12 @@ export default async function PolicyCopilotPage() {
                 className="govuk-button govuk-button--secondary inline-flex items-center gap-2"
               >
                 <Settings className="h-4 w-4" aria-hidden="true" />
-                Manage policy versions
+                Open licensing policy
               </Link>
             </div>
           )}
 
-          <PolicyWorkspace />
+          <PolicyWorkspace activeRegimes={policies.map((policy) => policy.regime)} />
         </div>
       </main>
 

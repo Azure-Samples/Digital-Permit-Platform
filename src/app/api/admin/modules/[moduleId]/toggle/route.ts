@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { toggleModule } from "@/lib/modules/registry";
 import { prisma } from "@/lib/db";
+import { isTrustedMutationOrigin } from "@/lib/http/origin";
+import { assertUuid } from "@/lib/http/validation";
 
 export async function POST(
   req: NextRequest,
@@ -13,8 +15,17 @@ export async function POST(
     if (!session?.user || session.user.role !== "ADMIN") {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
+    if (!isTrustedMutationOrigin(req)) {
+      return NextResponse.json(
+        { error: "Invalid request origin." },
+        { status: 403 },
+      );
+    }
 
     const resolvedParams = await params;
+    const invalid = assertUuid(resolvedParams.moduleId, "moduleId");
+    if (invalid) return invalid;
+
     const current = await prisma.licenceModule.findUnique({
       where: { id: resolvedParams.moduleId },
     });

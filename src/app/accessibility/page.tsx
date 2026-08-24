@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { GovFooter } from "@/components/ui/footer";
 import { GovHeader, getNavigationForRole } from "@/components/ui/header";
+import { getCouncilProfile } from "@/lib/setup/profile";
 
-export default function AccessibilityPage() {
-  const supportEmail =
-    process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "licensing@contoso.gov.uk";
+export const dynamic = "force-dynamic";
+
+export default async function AccessibilityPage() {
+  const profile = await getCouncilProfile();
+  const supportEmail = profile.supportEmail;
 
   return (
     <>

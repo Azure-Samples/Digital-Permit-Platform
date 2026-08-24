@@ -14,7 +14,7 @@ const LOCALE: Record<
 > = {
   en: {
     intro:
-      "Ask about running a licensed business — training staff, selling alcohol responsibly, what you can and cannot do. Answers use your council's licensing policy.",
+      "Ask about running a licensed business — training staff, selling alcohol responsibly, and what local policy expects.",
     placeholder: "Type your question…",
     suggestions: [
       "I've just employed someone new in my corner shop. What do I need to train them on?",
@@ -36,9 +36,23 @@ const LOCALE: Record<
   },
 };
 
-export function ApplicantAssistant() {
+export function ApplicantAssistant({
+  taxiPolicyAvailable = false,
+}: {
+  taxiPolicyAvailable?: boolean;
+}) {
   const [lang, setLang] = useState("en");
   const locale = LOCALE[lang] ?? LOCALE.en;
+  const intro =
+    taxiPolicyAvailable && lang === "en"
+      ? "Ask about running a licensed business or meeting local taxi and private-hire requirements. Answers use the relevant active council policy."
+      : locale.intro;
+  const suggestions = [
+    ...locale.suggestions,
+    ...(taxiPolicyAvailable && lang === "en"
+      ? ["What do I need to apply for a taxi or private hire driver licence?"]
+      : []),
+  ];
   const rtl = isRtl(lang);
 
   return (
@@ -88,15 +102,16 @@ export function ApplicantAssistant() {
         persona="applicant"
         language={lang}
         rtl={rtl}
-        intro={locale.intro}
+        intro={intro}
         placeholder={locale.placeholder}
-        suggestions={locale.suggestions}
+        suggestions={suggestions}
         resetKey={lang}
       />
 
       <p className="text-xs text-govuk-dark-grey mt-3">
         This is general guidance, not a formal decision. For anything specific to
-        your premises, contact the council&apos;s licensing team.
+        your premises, vehicle, driver or operator application, contact the council&apos;s
+        licensing team.
       </p>
     </div>
   );

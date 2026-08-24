@@ -14,6 +14,17 @@ export interface CreateApplicationInput {
   organisationId?: string;
 }
 
+export function mergeDraftAnswers(
+  currentAnswers: Record<string, unknown>,
+  sectionKey: string,
+  sectionAnswers: Record<string, unknown>,
+) {
+  return {
+    ...currentAnswers,
+    [sectionKey]: sectionAnswers,
+  };
+}
+
 /**
  * Create a new draft application.
  */
@@ -79,10 +90,7 @@ export async function saveDraftAnswers(
   if (app.status !== "DRAFT") throw new Error("Application is not in draft status");
 
   const currentAnswers = (app.answers as Record<string, unknown>) ?? {};
-  const updatedAnswers = {
-    ...currentAnswers,
-    [sectionKey]: answers,
-  };
+  const updatedAnswers = mergeDraftAnswers(currentAnswers, sectionKey, answers);
 
   await prisma.application.update({
     where: { id: applicationId },

@@ -18,6 +18,13 @@ const requiredPaths = [
   "infra/main.parameters.json",
   "scripts/identity/bootstrap.mjs",
   "scripts/identity/bootstrap-config.mjs",
+  "scripts/setup/deploy.ts",
+  "scripts/setup/deploy-config.ts",
+  "scripts/setup/build-installer-source.mjs",
+  "scripts/setup/Install-DigitalPermitPlatform.ps1",
+  "Install-DigitalPermitPlatform.cmd",
+  "Install-DigitalPermitPlatform.command",
+  "install-digital-permit-platform.sh",
   ".github/workflows/ci.yml",
   ".github/workflows/codeql.yml",
   ".github/dependabot.yml",
@@ -31,6 +38,7 @@ const requiredPaths = [
   "docs/local-development.md",
   "docs/configuration.md",
   "docs/identity.md",
+  "docs/installer.md",
   "docs/customization.md",
   "docs/security.md",
   "docs/responsible-ai.md",
@@ -43,7 +51,6 @@ const requiredPaths = [
 ];
 
 const forbiddenPaths = [
-  ".azure",
   ".env",
   "containerapp.yaml",
   "pitch",
@@ -58,9 +65,14 @@ const forbiddenPaths = [
   ["$", "{userHome}"].join(""),
 ];
 
-const ignoredDirectories = new Set([".git", ".next", "node_modules"]);
+const ignoredDirectories = new Set([".git", ".next", "dist", "node_modules"]);
+const allowedAzureWorkflowFiles = new Set([
+  path.join(".azure", "deployment-plan.md"),
+  path.join(".azure", "validate-status.json"),
+]);
 const textExtensions = new Set([
   ".bicep",
+  ".cmd",
   ".css",
   ".js",
   ".json",
@@ -68,6 +80,7 @@ const textExtensions = new Set([
   ".md",
   ".mjs",
   ".prisma",
+  ".ps1",
   ".sh",
   ".svg",
   ".ts",
@@ -115,6 +128,13 @@ async function walk(directory) {
       continue;
     }
     if (!entry.isFile()) continue;
+
+    if (
+      relativePath.startsWith(`.azure${path.sep}`) &&
+      !allowedAzureWorkflowFiles.has(relativePath)
+    ) {
+      failures.push(`forbidden Azure environment state: ${relativePath}`);
+    }
 
     const fileStat = await stat(fullPath);
     if (fileStat.size > 5 * 1024 * 1024) {

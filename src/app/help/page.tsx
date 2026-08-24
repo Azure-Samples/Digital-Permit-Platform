@@ -1,17 +1,30 @@
 import Link from "next/link";
-import { Sparkles, ShieldCheck, Users, Clock } from "lucide-react";
+import { Sparkles, ShieldCheck, Users, Clock, Car } from "lucide-react";
 import { GovHeader, getNavigationForRole } from "@/components/ui/header";
 import { GovFooter } from "@/components/ui/footer";
 import { getSessionOrNull } from "@/lib/permissions";
 import { ApplicantAssistant } from "@/components/ai/applicant-assistant";
 import { isAiConfigured } from "@/lib/ai/openai";
+import { prisma } from "@/lib/db";
+import { TAXI_POLICY_REGIME } from "@/lib/policy/regimes";
 
 export const dynamic = "force-dynamic";
 
 export default async function HelpPage() {
-  const session = await getSessionOrNull();
+  const [session, activeTaxiPolicy] = await Promise.all([
+    getSessionOrNull(),
+    prisma.licensingPolicy.findFirst({
+      where: {
+        regime: TAXI_POLICY_REGIME,
+        isActive: true,
+        sections: { some: {} },
+      },
+      select: { id: true },
+    }),
+  ]);
   const user = session?.user;
   const aiReady = isAiConfigured();
+  const taxiPolicyAvailable = Boolean(activeTaxiPolicy);
 
   return (
     <>
@@ -39,14 +52,14 @@ export default async function HelpPage() {
           </div>
           <p className="text-govuk-dark-grey max-w-3xl mb-6">
             {aiReady
-              ? "Plain-language answers about licensing for your business, grounded in the configured licensing policy."
+              ? "Plain-language answers grounded in the relevant active council licensing policy."
               : "The optional AI licensing assistant is not enabled in this environment."}
           </p>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             <div className="lg:col-span-2">
               {aiReady ? (
-                <ApplicantAssistant />
+                <ApplicantAssistant taxiPolicyAvailable={taxiPolicyAvailable} />
               ) : (
                 <div className="govuk-warning-text" role="status">
                   <strong>Assistant unavailable.</strong> Browse the licence
@@ -72,6 +85,12 @@ export default async function HelpPage() {
                     <Clock className="h-5 w-5 text-govuk-blue shrink-0" />
                     Your licensing hours and conditions
                   </li>
+                  {taxiPolicyAvailable && (
+                    <li className="flex gap-2">
+                      <Car className="h-5 w-5 text-govuk-blue shrink-0" />
+                      Taxi and private hire driver, vehicle and operator requirements
+                    </li>
+                  )}
                 </ul>
               </div>
 

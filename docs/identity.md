@@ -13,6 +13,8 @@ The platform separates public applicants from council staff:
 
 External ID supplies Microsoft-hosted self-service sign-up, sign-in, password reset, email one-time passcodes, social federation, branding, multifactor authentication, and Conditional Access options. The application uses standards-based OpenID Connect authorization code flow through NextAuth.
 
+Residents and businesses do not need a council email domain, workforce account, or pre-existing Microsoft Entra account. They use **Citizen sign in or create an account**, enter an ordinary personal or business email address, verify it, and complete the council-branded External ID flow. On first successful sign-in, the application creates its own local `APPLICANT` record linked by immutable issuer and subject identifiers. Staff never use this route for workforce access.
+
 Demo credentials remain available only when `AUTH_ENABLE_DEMO_CREDENTIALS=true`. Azure deployment derives that server-side value from `AUTHENTICATION_MODE`; `NEXT_PUBLIC_DEMO_MODE` controls sample UI only and is not an access-control setting.
 
 ## Authentication modes

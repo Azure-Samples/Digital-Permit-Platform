@@ -10,6 +10,7 @@ import {
   externalIdDiscoveryUrl,
   externalIdIssuer,
   getExternalIdConfiguration,
+  getRuntimeIdentityStatus,
   getWorkforceConfiguration,
   isDemoCredentialsEnabled,
 } from "../src/lib/auth/config";
@@ -145,6 +146,28 @@ describe("authentication configuration", () => {
     assert.equal(
       isDemoCredentialsEnabled({ AUTH_ENABLE_DEMO_CREDENTIALS: "true" }),
       true,
+    );
+  });
+
+  it("reports citizen self-registration and workforce sign-in independently", () => {
+    assert.deepEqual(getRuntimeIdentityStatus({}), {
+      citizenSelfRegistrationConfigured: false,
+      workforceEntraConfigured: false,
+      demoCredentialsEnabled: false,
+    });
+    assert.deepEqual(
+      getRuntimeIdentityStatus({
+        ENTRA_EXTERNAL_ID_TENANT_ID: TENANT_ID,
+        ENTRA_EXTERNAL_ID_TENANT_SUBDOMAIN: "example-external",
+        ENTRA_EXTERNAL_ID_CLIENT_ID: CLIENT_ID,
+        ENTRA_EXTERNAL_ID_CLIENT_SECRET: "external-secret",
+        AUTH_ENABLE_DEMO_CREDENTIALS: "true",
+      }),
+      {
+        citizenSelfRegistrationConfigured: true,
+        workforceEntraConfigured: false,
+        demoCredentialsEnabled: true,
+      },
     );
   });
 });

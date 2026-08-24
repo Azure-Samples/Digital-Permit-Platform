@@ -15,16 +15,20 @@
     "test": "tsx --test tests/*.test.ts",
     "test:watch": "tsx --test --watch tests/*.test.ts",
     "docs:check": "node scripts/check-markdown-links.mjs",
+    "audit:allowlist": "node scripts/audit-with-allowlist.mjs --audit-level low",
     "validate:release": "node scripts/validate-public-release.mjs",
     "setup:identity": "node ./scripts/identity/bootstrap.mjs",
+    "setup:deploy": "tsx ./scripts/setup/deploy.ts",
+    "setup:installer:package": "node ./scripts/setup/build-installer-source.mjs",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx --env-file-if-exists=.env prisma/seed.ts",
     "db:seed:policy": "tsx --env-file-if-exists=.env prisma/seed-policy.ts",
+    "db:seed:taxi-policy": "tsx --env-file-if-exists=.env prisma/seed-taxi-policy.ts",
     "db:seed:demo": "tsx --env-file-if-exists=.env prisma/seed-demo-applications.ts",
     "db:seed:permits": "tsx --env-file-if-exists=.env prisma/seed-permits.ts",
-    "db:seed:all": "npm run db:seed && npm run db:seed:policy && npm run db:seed:permits && npm run db:seed:demo",
+    "db:seed:all": "npm run db:seed && npm run db:seed:policy && npm run db:seed:taxi-policy && npm run db:seed:permits && npm run db:seed:demo",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset --force",
     "templates:generate": "node scripts/generate-licence-template.mjs",
@@ -85,12 +89,15 @@
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.20",
     "docx": "^9.7.1",
-    "postcss": "8.5.24",
+    "postcss": "8.5.26",
     "tailwindcss": "^3.4.11",
     "typescript": "^5.5.4"
   },
   "overrides": {
-    "postcss": "$postcss",
+    "postcss": {
+      ".": "$postcss",
+      "nanoid": "^3.3.17"
+    },
     "sharp": "0.35.3",
     "esbuild": "0.28.1"
   }

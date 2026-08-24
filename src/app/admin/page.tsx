@@ -6,6 +6,12 @@ import { requireRole } from "@/lib/permissions";
 import { getAllModules } from "@/lib/modules/registry";
 import { AdminTour } from "@/components/tour/admin-tour";
 import { TourLauncher } from "@/components/tour/tour-launcher";
+import { prisma } from "@/lib/db";
+import {
+  getTaxiPolicyReadiness,
+  isTaxiModule,
+  TAXI_POLICY_REGIME,
+} from "@/lib/policy/regimes";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +19,20 @@ export default async function AdminDashboard() {
   const session = await requireRole("ADMIN").catch(() => null);
   if (!session) redirect("/auth/login?callbackUrl=/admin");
 
-  const modules = await getAllModules();
+  const [modules, activeTaxiPolicy] = await Promise.all([
+    getAllModules(),
+    prisma.licensingPolicy.findFirst({
+      where: { regime: TAXI_POLICY_REGIME, isActive: true },
+      select: { id: true, title: true },
+    }),
+  ]);
+  const taxiModulesEnabled = modules.some(
+    (module) => module.enabled && isTaxiModule(module.category, module.moduleKey),
+  );
+  const taxiPolicyReadiness = getTaxiPolicyReadiness(
+    taxiModulesEnabled,
+    Boolean(activeTaxiPolicy),
+  );
 
   // Group by category
   const grouped = modules.reduce<Record<string, typeof modules>>(
@@ -63,6 +82,34 @@ export default async function AdminDashboard() {
             configuration.
           </p>
 
+          {taxiPolicyReadiness === "policy-missing" && (
+            <div className="mb-8 border-l-4 border-[#b35900] bg-[#fff7e6] p-4" role="status">
+              <p className="font-bold">Taxi policy recommended</p>
+              <p className="mb-2 text-sm">
+                Taxi or private-hire modules are enabled, but no taxi and private hire
+                licensing policy is active. DfT recommends a cohesive published policy;
+                this is not the statutory Licensing Act 2003 statement.
+              </p>
+              <Link href="/staff/policy/manage#upload-policy" className="font-bold">
+                Upload or activate a taxi policy
+              </Link>
+            </div>
+          )}
+
+          {taxiPolicyReadiness === "modules-disabled" && activeTaxiPolicy && (
+            <div className="mb-8 border-l-4 border-[#b35900] bg-[#fff7e6] p-4" role="status">
+              <p className="font-bold">Taxi policy active while services are disabled</p>
+              <p className="mb-2 text-sm">
+                {activeTaxiPolicy.title} is active, but all taxi and private-hire modules
+                are disabled. Confirm whether the policy is retained for future use or
+                enable the services the council provides.
+              </p>
+              <Link href="/staff/policy/manage" className="font-bold">
+                Review licensing policies
+              </Link>
+            </div>
+          )}
+
           {/* Summary stats */}
           <div id="admin-tour-stats" className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <div className="stat-card">
@@ -93,7 +140,13 @@ export default async function AdminDashboard() {
           {Object.entries(grouped).map(([category, mods]) => (
             <section
               key={category}
-              id={category === Object.keys(grouped)[0] ? "admin-tour-modules" : undefined}
+              id={
+                category === Object.keys(grouped)[0]
+                  ? "admin-tour-modules"
+                  : category.toLowerCase() === "taxis and private hire"
+                    ? "taxi-private-hire-modules"
+                    : undefined
+              }
               className="mb-8"
             >
               <h2 className="border-b-2 border-govuk-blue pb-2 mb-4">

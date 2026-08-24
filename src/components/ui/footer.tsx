@@ -1,12 +1,10 @@
+"use client";
+
 import Link from "next/link";
+import { useCouncilProfile } from "./council-profile-provider";
 
 export function GovFooter() {
-  const appName =
-    process.env.NEXT_PUBLIC_APP_NAME || "Contoso Council Digital Permit Platform";
-  const supportEmail =
-    process.env.NEXT_PUBLIC_SUPPORT_EMAIL || "licensing@contoso.gov.uk";
-  const supportPhone =
-    process.env.NEXT_PUBLIC_SUPPORT_PHONE || "0345 678 9000";
+  const profile = useCouncilProfile();
 
   return (
     <footer className="bg-govuk-dark-grey mt-auto" role="contentinfo">
@@ -17,13 +15,13 @@ export function GovFooter() {
             <ul className="list-none p-0 space-y-1">
               <li>
                 <Link
-                  href={`mailto:${supportEmail}`}
+                  href={`mailto:${profile.supportEmail}`}
                   className="text-govuk-mid-grey hover:text-white no-underline"
                 >
-                  {supportEmail}
+                  {profile.supportEmail}
                 </Link>
               </li>
-              <li className="text-govuk-mid-grey">{supportPhone}</li>
+              <li className="text-govuk-mid-grey">{profile.supportPhone}</li>
             </ul>
           </div>
           <div>
@@ -58,7 +56,7 @@ export function GovFooter() {
           <div>
             <h3 className="text-white text-govuk-m mb-3">About</h3>
             <p className="text-govuk-mid-grey text-sm">
-              {appName} is a reference implementation for digital licence and
+              {profile.serviceName} is a reference implementation for digital licence and
               permit applications.
             </p>
             <p className="mt-3 text-govuk-mid-grey text-xs">
@@ -68,7 +66,7 @@ export function GovFooter() {
         </div>
         <div className="border-t border-govuk-mid-grey pt-4">
           <p className="text-govuk-mid-grey text-xs">
-            © Contoso Council {new Date().getFullYear()}. All rights
+            © {profile.organisationName} {new Date().getFullYear()}. All rights
             reserved.
           </p>
         </div>

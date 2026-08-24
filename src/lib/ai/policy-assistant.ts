@@ -8,7 +8,12 @@ import {
   officerChatPrompt,
   applicantChatPrompt,
 } from "./prompts";
-import { resolveCitations, type PolicyContext } from "./policy-context";
+import {
+  buildCombinedPolicyGroundingText,
+  buildPolicyGroundingText,
+  resolveCitations,
+  type PolicyContext,
+} from "./policy-context";
 import type {
   LicenceSummary,
   ComplianceAssessment,
@@ -66,6 +71,13 @@ export async function extractLicenceText(
 
 // ── JSON helpers ─────────────────────────────────────────────
 
+function stripDangerousKeys(_key: string, value: unknown) {
+  if (_key === "__proto__" || _key === "constructor" || _key === "prototype") {
+    return undefined;
+  }
+  return value;
+}
+
 function parseJson<T>(raw: string | null): T {
   if (!raw) throw new Error("Empty AI response");
   // Strip accidental markdown fences.
@@ -73,7 +85,18 @@ function parseJson<T>(raw: string | null): T {
     .replace(/^```(?:json)?/i, "")
     .replace(/```$/i, "")
     .trim();
-  return JSON.parse(cleaned) as T;
+  return JSON.parse(cleaned, stripDangerousKeys) as T;
+}
+
+// Prompt-injection defence: neutralise the sequences models most often
+// obey from within user content, and clip anything unusually large.
+export function sanitiseUserContent(input: string, maxChars = 4000): string {
+  return input
+    .slice(0, maxChars)
+    .replace(/\r/g, "")
+    .replace(/<\/?(system|policy|licence|instructions?)>/gi, "")
+    .replace(/\bignore (all )?(previous|prior) instructions?\b/gi, "[filtered]")
+    .replace(/\bdisregard (all )?(previous|prior) instructions?\b/gi, "[filtered]");
 }
 
 // ── Licence analysis ─────────────────────────────────────────
@@ -86,7 +109,7 @@ export interface AnalyseResult {
 /** Produce an at-a-glance structured summary of a licence document. */
 export async function analyseLicence(text: string): Promise<AnalyseResult> {
   const openai = getOpenAI();
-  const clipped = text.slice(0, MAX_DOC_CHARS);
+  const clipped = sanitiseUserContent(text.slice(0, MAX_DOC_CHARS), MAX_DOC_CHARS);
 
   const res = await openai.chat.completions.create({
     model: AI_MODEL,
@@ -129,8 +152,9 @@ export async function assessCompliance(
   const openai = getOpenAI();
   const subjectText =
     typeof subject === "string"
-      ? subject.slice(0, MAX_DOC_CHARS)
+      ? sanitiseUserContent(subject.slice(0, MAX_DOC_CHARS), MAX_DOC_CHARS)
       : JSON.stringify(subject, null, 2);
+  const groundingText = buildPolicyGroundingText(policyCtx, subjectText);
 
   const res = await openai.chat.completions.create({
     model: AI_MODEL,
@@ -138,7 +162,10 @@ export async function assessCompliance(
     max_tokens: 1600,
     response_format: { type: "json_object" },
     messages: [
-      { role: "system", content: compliancePrompt(policyCtx.groundingText) },
+      {
+        role: "system",
+        content: compliancePrompt(groundingText, policyCtx.regime),
+      },
       {
         role: "user",
         content: `Assess this against the policy:\n\n${subjectText}`,
@@ -187,28 +214,47 @@ export interface ChatResult {
 }
 
 function extractCitations(
-  policyCtx: PolicyContext | null,
+  policyContexts: PolicyContext[],
   answer: string
 ): Citation[] {
-  if (!policyCtx) return [];
-  // Match refs like (5.3), [5.3], "section 5.3", or "5.3" near start of a clause.
   const refs = new Set<string>();
-  const re = /\b(\d{1,2}\.\d{1,2})\b/g;
-  let match = re.exec(answer);
+  const namespaced =
+    /(?:^|[^a-z_0-9])(licensing_act_2003|taxi_private_hire):(\d{1,3}(?:\.\d{1,3}){0,3})\b/gi;
+  let match = namespaced.exec(answer);
   while (match !== null) {
-    refs.add(match[1]);
-    match = re.exec(answer);
+    refs.add(`${match[1]}:${match[2]}`);
+    match = namespaced.exec(answer);
   }
-  return resolveCitations(policyCtx, Array.from(refs));
+  if (policyContexts.length === 1) {
+    const plain = /\b(\d{1,3}(?:\.\d{1,3}){1,3})\b/g;
+    let plainMatch = plain.exec(answer);
+    while (plainMatch !== null) {
+      refs.add(`${policyContexts[0].regime}:${plainMatch[1]}`);
+      plainMatch = plain.exec(answer);
+    }
+  }
+  return resolveCitations(policyContexts, Array.from(refs));
+}
+
+function sanitiseHistory(history: ChatTurn[]): ChatTurn[] {
+  return history.map((turn) =>
+    turn.role === "user"
+      ? { role: "user", content: sanitiseUserContent(turn.content) }
+      : turn,
+  );
 }
 
 /** Officer / police copilot chat, grounded in policy (+ optional licence). */
 export async function chatOfficer(
-  policyCtx: PolicyContext,
+  policyContexts: PolicyContext[],
   history: ChatTurn[],
   licenceContext?: string
 ): Promise<ChatResult> {
   const openai = getOpenAI();
+  const groundingText = buildCombinedPolicyGroundingText(
+    policyContexts,
+    [...history.slice(-6).map((turn) => turn.content), licenceContext ?? ""].join("\n"),
+  );
   const res = await openai.chat.completions.create({
     model: AI_MODEL,
     temperature: 0.2,
@@ -216,26 +262,30 @@ export async function chatOfficer(
     messages: [
       {
         role: "system",
-        content: officerChatPrompt(policyCtx.groundingText, licenceContext),
+        content: officerChatPrompt(groundingText, licenceContext),
       },
-      ...history,
+      ...sanitiseHistory(history),
     ],
   });
   const answer = res.choices[0]?.message?.content ?? "";
   return {
     answer,
-    citations: extractCitations(policyCtx, answer),
+    citations: extractCitations(policyContexts, answer),
     tokensUsed: res.usage?.total_tokens ?? 0,
   };
 }
 
 /** Multilingual applicant assistant chat, grounded in policy. */
 export async function chatApplicant(
-  policyCtx: PolicyContext,
+  policyContexts: PolicyContext[],
   history: ChatTurn[],
   langCode: string
 ): Promise<ChatResult> {
   const openai = getOpenAI();
+  const groundingText = buildCombinedPolicyGroundingText(
+    policyContexts,
+    history.slice(-6).map((turn) => turn.content).join("\n"),
+  );
   const res = await openai.chat.completions.create({
     model: AI_MODEL,
     temperature: 0.3,
@@ -244,18 +294,18 @@ export async function chatApplicant(
       {
         role: "system",
         content: applicantChatPrompt(
-          policyCtx.groundingText,
+          groundingText,
           languageName(langCode)
         ),
       },
-      ...history,
+      ...sanitiseHistory(history),
     ],
   });
   const answer = res.choices[0]?.message?.content ?? "";
   return {
     answer,
     // Citations are matched on refs, which are language-agnostic.
-    citations: extractCitations(policyCtx, answer),
+    citations: extractCitations(policyContexts, answer),
     tokensUsed: res.usage?.total_tokens ?? 0,
   };
 }

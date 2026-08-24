@@ -6,6 +6,7 @@
       "!**/*.css",
       "!.next",
       "!coverage",
+      "!dist",
       "!node_modules",
       "!prisma/migrations",
       "!public/templates"
@@ -37,6 +38,30 @@
       }
     }
   },
+  "overrides": [
+    {
+      "includes": ["src/components/pitch/**"],
+      "linter": {
+        "rules": {
+          "a11y": {
+            "noLabelWithoutControl": "off"
+          },
+          "complexity": {
+            "noUselessEscapeInRegex": "off"
+          },
+          "correctness": {
+            "noUnusedImports": "off"
+          },
+          "performance": {
+            "noImgElement": "off"
+          },
+          "suspicious": {
+            "noGlobalIsFinite": "off"
+          }
+        }
+      }
+    }
+  ],
   "assist": {
     "enabled": false
   }

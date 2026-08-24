@@ -32,7 +32,7 @@ The Digital Permit Platform demonstrates a reusable alternative:
 - versioned module definitions so in-flight cases retain their original rules;
 - resident self-service and staff case management over the same record;
 - an append-only audit trail for material actions;
-- optional AI assistance grounded in a seeded licensing policy;
+- optional AI assistance grounded in separately versioned Licensing Act and taxi/private-hire policies;
 - repeatable Azure deployment through the Azure Developer CLI (`azd`).
 
 ## What it includes
@@ -58,7 +58,7 @@ The seed data demonstrates taxis and private hire, alcohol and entertainment, an
 | Notifications | Queue contract and worker placeholders | Integrate Azure Communication Services or an approved email/SMS service |
 | Malware scanning | Queue contract and simulated result | Enable Defender for Storage malware scanning or an approved scanning service |
 | AI | Optional Azure OpenAI policy assistant and analyser | Complete use-case evaluation, safety review, DPIA, monitoring, and human-oversight design |
-| Policy grounding | In-app PDF/DOCX/text import, parsed preview, version library, controlled activation, source download, and seeded demonstration policy | Upload the approved local policy, review parsed sections, activate it, and validate citation paths |
+| Policy grounding | In-app PDF/DOCX/text import, original-source review, separate Licensing Act and taxi/private-hire histories, controlled activation, source download, module-readiness warnings, and regime-aware retrieval | Upload each applicable approved local policy, confirm the authority's legal framework, activate it, and validate regime routing and citation paths |
 
 ## Architecture
 
@@ -135,6 +135,8 @@ If no environment or deployed URL exists, the command creates/selects the enviro
 
 Adopters only need to choose the external tenant, approve Azure and directory sign-ins, assign staff users or groups to the generated roles, and apply their MFA, Conditional Access and branding policies. Use `--plan` to preview without changes. See [Identity](docs/identity.md) for permissions and fallback procedures.
 
+Citizens do not need a council domain or existing Microsoft Entra account. The external tenant provides a council-branded self-service flow where residents and businesses register with an ordinary email address. Council officers, managers, and administrators use the separate workforce tenant and signed app roles. After deployment, administrators can reopen **Setup** to publish branding and contacts. Module availability remains under **Admin > Modules**, while Azure resources, regions, identity credentials and callbacks remain exclusively in the separate installer and controlled deployment workflow.
+
 ### Enable AI
 
 Check model availability and quota in the chosen region before deployment.
@@ -148,15 +150,17 @@ azd up
 
 The default model is `gpt-4.1-mini` version `2025-04-14` on Global Standard. Change the Bicep model parameters when that model is unavailable or an organisation has an approved alternative.
 
-### Customise public settings
+### Complete council setup
 
-```bash
-azd env set NEXT_PUBLIC_APP_NAME "Example Council Permit Platform"
-azd env set NEXT_PUBLIC_SUPPORT_EMAIL "permits@example.gov.uk"
-azd env set NEXT_PUBLIC_SUPPORT_PHONE "0300 123 4567"
-azd env set SEED_DEMO_DATA false
-azd up
-```
+After the first deployment, open `<application-url>/setup`. It covers only presentation and resident-facing configuration:
+
+1. council name, service name, and support contacts;
+2. an approved landscape logo, optional adjacent council-name text, and accessible header/accent colours with live preview;
+3. a server-validated review and explicit citizen/staff impact confirmation before publication.
+
+The draft remains in that browser until an administrator signs in and explicitly publishes it. Publishing updates the audited runtime council profile and branding without rebuilding the application. Azure resources, regions, AI and identity are deliberately not editable here; use the separate customer installer and controlled deployment workflow for those changes.
+
+Environment values such as `NEXT_PUBLIC_APP_NAME` remain first-run fallbacks before a profile is applied. Use `SEED_DEMO_DATA=false` outside demonstration environments.
 
 For quota checks, permissions, deployment outputs, CI/CD, teardown, and failure recovery, follow the complete [deployment guide](docs/deployment.md).
 For applicant self-service and staff sign-in, follow the [identity setup guide](docs/identity.md).
@@ -183,6 +187,7 @@ npm run dev
 Open:
 
 - application: <http://localhost:3000>
+- council setup: <http://localhost:3000/setup>
 - MailHog email viewer: <http://localhost:8025>
 
 Run the worker in a second terminal when testing background jobs:
@@ -230,6 +235,7 @@ The repository also validates Bicep, public-release hygiene, Markdown links, con
 |---|---|
 | [Architecture](docs/architecture.md) | Services, data flows, trust boundaries, and design decisions |
 | [Deployment](docs/deployment.md) | `azd`, prerequisites, AI quota, outputs, CI/CD, and cleanup |
+| [Hosted installer](docs/installer.md) | Installer, customer-owned Azure deployment, setup package, and post-deployment handoff |
 | [Local development](docs/local-development.md) | Developer setup, seeds, testing, and troubleshooting |
 | [Configuration](docs/configuration.md) | Environment variables and deployment parameters |
 | [Identity](docs/identity.md) | External ID user flows, workforce app roles, callbacks, account linking, and validation |

@@ -10,14 +10,21 @@ export const POLICY_UPLOAD_MIME_TYPES = [
   "text/markdown",
 ] as const;
 
-export const MAX_POLICY_FILE_SIZE_MB = 10;
-export const MAX_POLICY_TEXT_CHARACTERS = 500_000;
-const MAX_POLICY_PDF_PAGES = 500;
+export const MAX_POLICY_FILE_SIZE_MB = 50;
+export const MAX_POLICY_TEXT_CHARACTERS = 2_000_000;
+const MAX_POLICY_PDF_PAGES = 1_000;
 const MAX_DOCX_ENTRIES = 250;
 const MAX_DOCX_UNCOMPRESSED_BYTES = 25 * 1024 * 1024;
 const MAX_DOCX_ENTRY_BYTES = 8 * 1024 * 1024;
 const MAX_DOCX_COMPRESSION_RATIO = 100;
-const POLICY_PARSE_TIMEOUT_MS = 15_000;
+const POLICY_PARSE_TIMEOUT_MS = 60_000;
+
+export class PolicyTextUnavailableError extends Error {}
+
+export interface PolicyTextExtractionResult {
+  text: string;
+  searchIndexTruncated: boolean;
+}
 
 type PolicyDocumentType = "pdf" | "docx" | "text";
 
@@ -72,10 +79,9 @@ async function parse() {
     const mammoth = require(workerData.modules.mammoth);
     text = (await mammoth.extractRawText({ buffer })).value || "";
   }
-  if (text.length > workerData.maxTextCharacters) {
-    throw new Error("The extracted policy text is too large.");
-  }
-  parentPort.postMessage({ text });
+  const searchIndexTruncated = text.length > workerData.maxTextCharacters;
+  text = text.slice(0, workerData.maxTextCharacters);
+  parentPort.postMessage({ text, searchIndexTruncated });
 }
 
 parse().catch((error) => {
@@ -86,7 +92,7 @@ parse().catch((error) => {
 function parseInBoundedWorker(
   buffer: Buffer,
   documentType: "pdf" | "docx",
-): Promise<string> {
+): Promise<PolicyTextExtractionResult> {
   return new Promise((resolve, reject) => {
     const worker = new Worker(parserWorkerSource, {
       eval: true,
@@ -102,8 +108,8 @@ function parseInBoundedWorker(
         maxDocxCompressionRatio: MAX_DOCX_COMPRESSION_RATIO,
       },
       resourceLimits: {
-        maxOldGenerationSizeMb: 128,
-        maxYoungGenerationSizeMb: 32,
+        maxOldGenerationSizeMb: 256,
+        maxYoungGenerationSizeMb: 64,
         stackSizeMb: 4,
       },
     });
@@ -118,11 +124,18 @@ function parseInBoundedWorker(
     const timeout = setTimeout(() => {
       finish(() => reject(new Error("Policy document parsing timed out.")));
     }, POLICY_PARSE_TIMEOUT_MS);
-    worker.once("message", (message: { text?: string; error?: string }) => {
+    worker.once("message", (message: {
+      text?: string;
+      searchIndexTruncated?: boolean;
+      error?: string;
+    }) => {
       finish(() =>
         message.error
           ? reject(new Error(message.error))
-          : resolve(message.text ?? ""),
+          : resolve({
+              text: message.text ?? "",
+              searchIndexTruncated: Boolean(message.searchIndexTruncated),
+            }),
       );
     });
     worker.once("error", () => {
@@ -182,34 +195,44 @@ function validateSignature(buffer: Buffer, type: PolicyDocumentType) {
   }
 }
 
-export async function extractPolicyDocumentText(
+export async function extractPolicyDocument(
   buffer: Buffer,
   filename: string,
   mimeType: string,
-): Promise<string> {
+): Promise<PolicyTextExtractionResult> {
   const documentType = detectPolicyDocumentType(filename, mimeType);
   if (!documentType) {
     throw new Error("Upload a PDF, DOCX, Markdown, or plain-text policy document.");
   }
   validateSignature(buffer, documentType);
 
-  const extractedText =
+  const extracted =
     documentType === "text"
-      ? buffer.toString("utf8")
+      ? {
+          text: buffer.toString("utf8"),
+          searchIndexTruncated: buffer.length > MAX_POLICY_TEXT_CHARACTERS,
+        }
       : await parseInBoundedWorker(buffer, documentType);
 
-  const normalized = normalizePolicyText(extractedText);
+  const normalized = normalizePolicyText(extracted.text);
   if (normalized.length < 200) {
-    throw new Error(
+    throw new PolicyTextUnavailableError(
       documentType === "pdf"
-        ? "Very little text was extracted. Upload a text-based PDF rather than a scanned image, or use DOCX/text."
+        ? "Very little searchable text was extracted. The PDF may be scanned or image-only."
         : "The policy document does not contain enough readable text.",
     );
   }
-  if (normalized.length > MAX_POLICY_TEXT_CHARACTERS) {
-    throw new Error(
-      `The extracted policy exceeds ${MAX_POLICY_TEXT_CHARACTERS.toLocaleString()} characters.`,
-    );
-  }
-  return normalized;
+  return {
+    text: normalized.slice(0, MAX_POLICY_TEXT_CHARACTERS),
+    searchIndexTruncated:
+      extracted.searchIndexTruncated || normalized.length > MAX_POLICY_TEXT_CHARACTERS,
+  };
+}
+
+export async function extractPolicyDocumentText(
+  buffer: Buffer,
+  filename: string,
+  mimeType: string,
+): Promise<string> {
+  return (await extractPolicyDocument(buffer, filename, mimeType)).text;
 }

@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import {
   Car,
   Wine,
@@ -13,6 +12,7 @@ import {
   LogOut,
 } from "lucide-react";
 import type { SystemRole } from "@prisma/client";
+import { CouncilLogo, CouncilServiceName } from "./council-brand";
 
 // ─── Category icons (used on homepage) ────────────────────────
 export const CATEGORY_ICONS: Record<string, React.ReactNode> = {
@@ -56,6 +56,7 @@ export function getNavigationForRole(
       { label: "Dashboard", href: "/staff" },
       { label: "Work queue", href: "/staff/queue" },
       { label: "Policy Copilot", href: "/staff/policy" },
+      { label: "Licensing policy", href: "/staff/policy/manage" },
       { label: "Modules", href: "/staff/modules" },
       { label: "Reports", href: "/staff/reports" },
     );
@@ -66,9 +67,12 @@ export function getNavigationForRole(
       { label: "Dashboard", href: "/staff" },
       { label: "Work queue", href: "/staff/queue" },
       { label: "Policy Copilot", href: "/staff/policy" },
+      { label: "Licensing policy", href: "/staff/policy/manage" },
       { label: "Modules", href: "/admin" },
-      { label: "Licences", href: "/admin/licence-management" },
+      { label: "Setup", href: "/setup" },
+      { label: "Templates", href: "/admin/licence-management" },
       { label: "Users", href: "/admin/users" },
+      { label: "API access", href: "/admin/api-access" },
       { label: "Audit log", href: "/admin/audit" },
       { label: "Reports", href: "/staff/reports" },
     );
@@ -119,32 +123,20 @@ interface HeaderProps {
 }
 
 export function GovHeader({
-  serviceName = "Digital Permit Platform",
+  serviceName = "Licensing Portal",
   navigation = [],
   userName,
   userRole,
 }: HeaderProps) {
   const label = roleLabel(userRole);
-  const platformName =
-    process.env.NEXT_PUBLIC_APP_NAME || "Digital Permit Platform";
-  const displayServiceName = serviceName.replace(
-    /^Licensing Portal/,
-    platformName,
-  );
 
   return (
     <header>
       {/* Council top bar */}
-      <div className="bg-[#0b2e5e]">
+      <div style={{ backgroundColor: "var(--brand-primary)" }}>
         <div className="govuk-container flex items-center justify-between py-3">
           <Link href="/" className="no-underline flex items-center">
-            <Image
-              src="/contoso_logo.svg"
-              alt="Contoso Council"
-              width={280}
-              height={48}
-              className="h-10 md:h-12"
-            />
+            <CouncilLogo />
           </Link>
 
           {/* Auth state */}
@@ -155,14 +147,14 @@ export function GovHeader({
                   <User className="h-4 w-4" />
                   {userName}
                   {label && (
-                    <span className="bg-govuk-blue text-white text-xs px-1.5 py-0.5 rounded ml-1 font-bold">
+                    <span className="bg-white/15 text-white text-xs px-1.5 py-0.5 rounded ml-1 font-bold">
                       {label}
                     </span>
                   )}
                 </span>
                 <Link
                   href="/api/auth/signout"
-                  className="text-blue-200 hover:text-white no-underline flex items-center gap-1"
+                  className="text-white/80 hover:text-white no-underline flex items-center gap-1"
                 >
                   <LogOut className="h-3.5 w-3.5" />
                   Sign out
@@ -171,7 +163,7 @@ export function GovHeader({
             ) : (
               <Link
                 href="/auth/login"
-                className="text-blue-200 hover:text-white no-underline flex items-center gap-1"
+                className="text-white/80 hover:text-white no-underline flex items-center gap-1"
               >
                 <LogIn className="h-4 w-4" />
                 Sign in
@@ -182,13 +174,19 @@ export function GovHeader({
       </div>
 
       {/* Service name bar with blue accent border */}
-      <div className="bg-[#0b2e5e] border-b-4 border-[#009fe3]">
+      <div
+        className="border-b-4"
+        style={{
+          backgroundColor: "var(--brand-primary)",
+          borderColor: "var(--brand-accent)",
+        }}
+      >
         <div className="govuk-container py-2">
           <Link
             href="/"
             className="text-white font-bold text-xl no-underline hover:underline"
           >
-            {displayServiceName}
+            <CouncilServiceName requestedName={serviceName} />
           </Link>
         </div>
       </div>
@@ -196,7 +194,8 @@ export function GovHeader({
       {/* Navigation */}
       {navigation.length > 0 && (
         <nav
-          className="bg-[#0a2a56] border-b border-[#1a4a8a]"
+          className="border-b border-white/20"
+          style={{ backgroundColor: "var(--brand-primary)" }}
           aria-label="Service navigation"
         >
           <div className="govuk-container">
@@ -207,8 +206,8 @@ export function GovHeader({
                     href={item.href}
                     className={`inline-block px-4 py-3 text-sm no-underline transition-colors ${
                       item.active
-                        ? "text-white bg-[#1a4a8a] font-bold"
-                        : "text-blue-200 hover:text-white hover:bg-[#1a4a8a]"
+                        ? "text-white bg-white/15 font-bold"
+                        : "text-white/80 hover:text-white hover:bg-white/10"
                     }`}
                   >
                     {item.label}

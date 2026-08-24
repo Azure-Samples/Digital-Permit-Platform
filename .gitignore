@@ -6,6 +6,7 @@ node_modules/
 *.tsbuildinfo
 next-env.d.ts
 dist/
+deployment-result.json
 coverage/
 .DS_Store
 *.log

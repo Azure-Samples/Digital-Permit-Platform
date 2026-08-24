@@ -6,16 +6,29 @@ import { GovFooter } from "@/components/ui/footer";
 import { PolicyDocumentView } from "@/components/policy/policy-document-view";
 import { requireRole } from "@/lib/permissions";
 import { getActivePolicyContext } from "@/lib/ai/policy-context";
+import {
+  DEFAULT_POLICY_REGIME,
+  isPolicyRegime,
+  POLICY_REGIME_CONFIG,
+} from "@/lib/policy/regimes";
 
 export const dynamic = "force-dynamic";
 
-export default async function PolicyDocumentPage() {
+export default async function PolicyDocumentPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ regime?: string }>;
+}) {
   const session = await requireRole("REVIEWER", "MANAGER", "ADMIN").catch(
     () => null
   );
   if (!session) redirect("/auth/login?callbackUrl=/staff/policy/document");
 
-  const policy = await getActivePolicyContext();
+  const requestedRegime = (await searchParams).regime;
+  const regime = isPolicyRegime(requestedRegime)
+    ? requestedRegime
+    : DEFAULT_POLICY_REGIME;
+  const policy = await getActivePolicyContext(regime);
   if (!policy) return notFound();
 
   return (
@@ -46,7 +59,7 @@ export default async function PolicyDocumentPage() {
             <h1 className="!mb-0">{policy.title}</h1>
           </div>
           <p className="text-govuk-dark-grey mb-6">
-            {policy.councilName} · in force {policy.versionLabel}
+            {POLICY_REGIME_CONFIG[policy.regime].label} · {policy.councilName} · in force {policy.versionLabel}
           </p>
 
           <PolicyDocumentView
@@ -58,6 +71,7 @@ export default async function PolicyDocumentPage() {
                 : undefined
             }
             sourceFilename={policy.sourceFilename}
+            sourceMimeType={policy.sourceMimeType}
           />
         </div>
       </main>

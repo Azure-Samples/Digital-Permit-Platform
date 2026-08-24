@@ -17,20 +17,24 @@ import {
   assessApplication,
 } from "./policy-assistant";
 import type { LicenceSummary } from "./types";
+import { policyRegimeForModule } from "@/lib/policy/regimes";
 
 /** Build a compact plain-text description of a licence for chat grounding. */
 export function licenceContextFromSummary(summary: LicenceSummary): string {
+  const isTaxiDocument = /(?:taxi|private hire|hackney)/i.test(summary.documentType);
   const lines: string[] = [
     `Document type: ${summary.documentType}`,
     summary.licenceNumber ? `Licence number: ${summary.licenceNumber}` : "",
-    summary.premisesName ? `Premises: ${summary.premisesName}` : "",
+    summary.premisesName
+      ? `${isTaxiDocument ? "Licensed subject" : "Premises"}: ${summary.premisesName}`
+      : "",
     summary.premisesAddress ? `Address: ${summary.premisesAddress}` : "",
     summary.licenceHolder ? `Licence holder: ${summary.licenceHolder}` : "",
-    summary.designatedPremisesSupervisor?.name
+    !isTaxiDocument && summary.designatedPremisesSupervisor?.name
       ? `DPS: ${summary.designatedPremisesSupervisor.name} (${summary.designatedPremisesSupervisor.personalLicenceNumber ?? "no number"})`
       : "",
     summary.openingHours ? `Opening hours: ${summary.openingHours}` : "",
-    "Licensable activities:",
+    isTaxiDocument ? "Licence scope and restrictions:" : "Licensable activities:",
     ...summary.licensableActivities.map(
       (a) => `  - ${a.activity}${a.hours ? ` (${a.days ?? ""} ${a.hours})` : ""}`
     ),
@@ -97,10 +101,15 @@ export async function runLicenceAnalysis(analysisId: string): Promise<void> {
     const { summary, tokensUsed: t1 } = await analyseLicence(text);
 
     // 3. Compliance vs the active policy (if one is configured).
-    const policyCtx = await getActivePolicyContext();
+    const policyCtx = await getActivePolicyContext(
+      policyRegimeForModule(
+        summary.documentType,
+        `${summary.documentType}\n${text.slice(0, 5_000)}`,
+      ),
+    );
     let compliance = null;
     let t2 = 0;
-    if (policyCtx) {
+    if (policyCtx && policyCtx.sections.length > 0) {
       const res = await assessCompliance(policyCtx, summary);
       compliance = res.compliance;
       t2 = res.tokensUsed;
@@ -136,6 +145,9 @@ export async function runLicenceAnalysis(analysisId: string): Promise<void> {
 export async function runApplicationInsight(
   applicationId: string
 ): Promise<void> {
+  let policyRegime: "licensing_act_2003" | "taxi_private_hire" | null = null;
+  let policyId: string | null = null;
+  let policyVersionLabel: string | null = null;
   try {
     const application = await prisma.application.findUnique({
       where: { id: applicationId },
@@ -143,13 +155,39 @@ export async function runApplicationInsight(
     });
     if (!application) return;
 
-    const policyCtx = await getActivePolicyContext();
+    policyRegime = policyRegimeForModule(
+      application.module.category,
+      application.module.moduleKey,
+    );
+    const policyCtx = await getActivePolicyContext(policyRegime);
     if (!policyCtx) {
       await prisma.applicationPolicyInsight.update({
         where: { applicationId },
         data: {
           status: "FAILED",
-          errorMessage: "No licensing policy is configured.",
+          errorMessage:
+            policyRegime === "taxi_private_hire"
+              ? "No active taxi and private hire licensing policy is configured."
+              : "No active Statement of Licensing Policy is configured.",
+              policyId: null,
+              policyRegime,
+              policyVersionLabel: null,
+        },
+      });
+      return;
+    }
+    policyId = policyCtx.policyId;
+    policyVersionLabel = policyCtx.versionLabel;
+    if (policyCtx.sections.length === 0) {
+      await prisma.applicationPolicyInsight.update({
+        where: { applicationId },
+        data: {
+          status: "FAILED",
+          errorMessage:
+            "The active statement has no searchable text. Review the retained source document or upload a text-based version.",
+          policyId,
+          policyRegime,
+          policyVersionLabel,
         },
       });
       return;
@@ -170,6 +208,9 @@ export async function runApplicationInsight(
         model: AI_MODEL,
         tokensUsed,
         errorMessage: null,
+        policyId,
+        policyRegime,
+        policyVersionLabel,
       },
     });
   } catch (err) {
@@ -179,6 +220,9 @@ export async function runApplicationInsight(
         data: {
           status: "FAILED",
           errorMessage: (err as Error).message?.slice(0, 500) ?? "Insight failed",
+          policyId,
+          policyRegime,
+          policyVersionLabel,
         },
       })
       .catch(() => {});

@@ -102,3 +102,19 @@ export function isDemoCredentialsEnabled(
 ): boolean {
   return env.AUTH_ENABLE_DEMO_CREDENTIALS === "true";
 }
+
+export interface RuntimeIdentityStatus {
+  citizenSelfRegistrationConfigured: boolean;
+  workforceEntraConfigured: boolean;
+  demoCredentialsEnabled: boolean;
+}
+
+export function getRuntimeIdentityStatus(
+  env: Environment = process.env,
+): RuntimeIdentityStatus {
+  return {
+    citizenSelfRegistrationConfigured: Boolean(getExternalIdConfiguration(env)),
+    workforceEntraConfigured: Boolean(getWorkforceConfiguration(env)),
+    demoCredentialsEnabled: isDemoCredentialsEnabled(env),
+  };
+}
