@@ -20,6 +20,15 @@ const ALLOWED_ADVISORIES = new Map([
         "postcss 8.x requires nanoid 3.x, but the advisory fix range is <3.3.18 which has not been published. postcss does not call nanoid with custom generators (size !== 0), so this app is not exploitable. Remove this allowlist entry once nanoid@3.3.18+ ships or postcss adopts nanoid@5.",
     },
   ],
+  [
+    "GHSA-ggr8-5vv4-36mx",
+    {
+      package: "deepmerge-ts",
+      severity: "high",
+      reason:
+        "Transitive via prisma / @prisma/config, used only to merge developer-authored Prisma config at CLI/build time — not reachable with untrusted runtime input, so the prototype-pollution vector is not exploitable in this app. npm audit reports no non-breaking fix (fixAvailable is a semver-major prisma change). Remove once prisma ships a patched deepmerge-ts.",
+    },
+  ],
 ]);
 
 const argv = process.argv.slice(2);
