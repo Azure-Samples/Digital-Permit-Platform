@@ -1,8 +1,16 @@
 // ─────────────────────────────────────────────────────────────
 // Module registry service
 // ─────────────────────────────────────────────────────────────
+import { Prisma, type ModuleVersion } from "@prisma/client";
 import { prisma } from "../db";
-import { writeAuditLog } from "../audit";
+import {
+  createModuleDefinition,
+  getModuleReadiness,
+  moduleDefinitionSchema,
+  moduleIdentitySchema,
+  type DefinitionIssue,
+  type ModuleDefinition,
+} from "./definition";
 import type {
   FormSection,
   DocumentRequirement,
@@ -49,7 +57,7 @@ export async function getPublicModuleCatalogue() {
  * Get all modules for admin listing (includes draft/disabled).
  */
 export async function getAllModules() {
-  return prisma.licenceModule.findMany({
+  const modules = await prisma.licenceModule.findMany({
     include: {
       versions: {
         orderBy: { version: "desc" },
@@ -59,6 +67,12 @@ export async function getAllModules() {
     },
     orderBy: [{ category: "asc" }, { sortOrder: "asc" }],
   });
+  const published = await prisma.moduleVersion.findMany({
+    where: { isActive: true, visibility: { not: "DRAFT" } },
+    select: { moduleId: true, version: true, visibility: true },
+  });
+  const liveVersions = new Map(published.map((version) => [version.moduleId, version]));
+  return modules.map((module) => ({ ...module, liveVersion: liveVersions.get(module.id) ?? null }));
 }
 
 /**
@@ -116,79 +130,116 @@ export async function getModuleVersion(versionId: string) {
   };
 }
 
-/**
- * Create a disabled draft module with a minimal first version.
- */
+export class ModuleBuilderError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly issues: DefinitionIssue[] = [],
+  ) {
+    super(message);
+  }
+}
+
+export async function getModuleBuilderOptions() {
+  const [modules, teams] = await Promise.all([
+    prisma.licenceModule.findMany({
+      select: { id: true, moduleKey: true, displayName: true, category: true },
+      orderBy: { displayName: "asc" },
+    }),
+    prisma.team.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+  ]);
+  return { modules, teams, categories: [...new Set(modules.map((module) => module.category))].sort() };
+}
+
+export async function getModuleForBuilder(moduleKey: string) {
+  const [module, liveVersion] = await Promise.all([
+    prisma.licenceModule.findUnique({
+      where: { moduleKey },
+      include: { versions: { orderBy: { version: "desc" }, take: 20 } },
+    }),
+    prisma.moduleVersion.findFirst({
+      where: { module: { moduleKey }, isActive: true, visibility: { not: "DRAFT" } },
+      orderBy: { version: "desc" },
+      select: { id: true, version: true, visibility: true, acceptingApplications: true },
+    }),
+  ]);
+  return module?.versions.length ? { ...module, liveVersion } : null;
+}
+
+function definitionData(definition: ModuleDefinition, previous?: ModuleVersion) {
+  const json = (value: unknown) => value == null ? Prisma.JsonNull : value as Prisma.InputJsonValue;
+  return {
+    visibility: definition.visibility,
+    publicDescription: definition.publicDescription || null,
+    helpText: definition.helpText || null,
+    beforeYouStartText: definition.beforeYouStartText || null,
+    applicationTypes: definition.applicationTypes,
+    paymentMode: definition.paymentMode,
+    feeSchedule: json(definition.feeSchedule),
+    formSchema: json(definition.formSchema),
+    documentRequirements: json(definition.documentRequirements),
+    workflowDefinition: json(definition.workflowDefinition.map((stage, index) => ({ ...stage, order: index + 1 }))),
+    reviewChecklist: json(definition.reviewChecklist),
+    submissionMailbox: definition.submissionMailbox || null,
+    owningTeamId: definition.owningTeamId || null,
+    acceptingApplications: definition.acceptingApplications,
+    eligibilityRules: json(definition.eligibilityRules === undefined ? previous?.eligibilityRules : definition.eligibilityRules),
+    conditionalRules: json(definition.conditionalRules === undefined ? previous?.conditionalRules : definition.conditionalRules),
+    notificationTemplates: json(definition.notificationTemplates === undefined ? previous?.notificationTemplates : definition.notificationTemplates),
+    retentionPolicy: json(definition.retentionPolicy === undefined ? previous?.retentionPolicy : definition.retentionPolicy),
+    decisionTemplates: json(definition.decisionTemplates === undefined ? previous?.decisionTemplates : definition.decisionTemplates),
+    verificationStatus: definition.verificationStatus ?? previous?.verificationStatus ?? "NEEDS_COUNCIL_CONFIRMATION" as const,
+  };
+}
+
+function translateWriteError(error: unknown): never {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (error.code === "P2002") throw new ModuleBuilderError("A module with that key already exists. Choose a different key.", 409);
+    if (error.code === "P2025") throw new ModuleBuilderError("This module no longer exists.", 404);
+    if (error.code === "P2003") throw new ModuleBuilderError("The selected team is no longer available. Choose another team.", 422);
+  }
+  throw error;
+}
+
 export async function createLicenceModule(
   data: {
     moduleKey: string;
     displayName: string;
     category: string;
     publicDescription?: string;
+    definition?: ModuleDefinition;
   },
   userId: string,
 ) {
-  const existing = await prisma.licenceModule.findUnique({
-    where: { moduleKey: data.moduleKey },
-    select: { id: true },
+  const identity = moduleIdentitySchema.parse(data);
+  const definition = moduleDefinitionSchema.parse(data.definition ?? {
+    ...createModuleDefinition(), publicDescription: data.publicDescription ?? "",
   });
-  if (existing) throw new Error("MODULE_KEY_EXISTS");
-
-  const module = await prisma.licenceModule.create({
-    data: {
-      moduleKey: data.moduleKey,
-      displayName: data.displayName,
-      category: data.category,
-      enabled: false,
-      versions: {
-        create: {
-          version: 1,
-          isActive: true,
-          visibility: "DRAFT",
-          publicDescription: data.publicDescription || null,
-          applicationTypes: ["new"],
-          paymentMode: "NO_FEE",
-          formSchema: [],
-          documentRequirements: [],
-          workflowDefinition: [
-            {
-              key: "validation",
-              label: "Application validation",
-              order: 1,
-              type: "validation",
-              slaBusinessDays: 5,
-              visibleToApplicant: true,
-            },
-            {
-              key: "decision",
-              label: "Decision",
-              order: 2,
-              type: "decision",
-              slaBusinessDays: 5,
-              visibleToApplicant: true,
-            },
-          ],
-          reviewChecklist: [],
-          acceptingApplications: false,
+  try {
+    return await prisma.$transaction(async (transaction) => {
+      const module = await transaction.licenceModule.create({
+        data: {
+          ...identity,
+          enabled: false,
+          versions: { create: {
+            ...definitionData(definition),
+            version: 1,
+            isActive: false,
+            visibility: "DRAFT",
+            acceptingApplications: false,
+          } },
         },
-      },
-    },
-  });
-
-  await writeAuditLog({
-    userId,
-    action: "module.create",
-    entityType: "LicenceModule",
-    entityId: module.id,
-    newValues: {
-      moduleKey: module.moduleKey,
-      displayName: module.displayName,
-      category: module.category,
-      enabled: module.enabled,
-    },
-  });
-
-  return module;
+        include: { versions: true },
+      });
+      await transaction.auditLog.create({ data: {
+        userId, action: "module.create", entityType: "LicenceModule", entityId: module.id,
+        newValues: { ...identity, enabled: false, version: 1 },
+      } });
+      return module;
+    });
+  } catch (error) {
+    translateWriteError(error);
+  }
 }
 
 /**
@@ -199,22 +250,23 @@ export async function toggleModule(
   enabled: boolean,
   userId: string
 ) {
-  const prev = await prisma.licenceModule.findUnique({ where: { id: moduleId } });
-  const module = await prisma.licenceModule.update({
-    where: { id: moduleId },
-    data: { enabled },
+  return prisma.$transaction(async (transaction) => {
+    const previous = await transaction.licenceModule.findUnique({ where: { id: moduleId } });
+    if (!previous) throw new ModuleBuilderError("Module not found.", 404);
+    if (enabled && !await transaction.moduleVersion.findFirst({ where: { moduleId, isActive: true, visibility: { not: "DRAFT" } }, select: { id: true } })) {
+      throw new ModuleBuilderError("Publish a version before enabling this module.", 422);
+    }
+    const module = await transaction.licenceModule.update({ where: { id: moduleId }, data: { enabled } });
+    await transaction.auditLog.create({ data: {
+      userId,
+      action: enabled ? "module.enable" : "module.disable",
+      entityType: "LicenceModule",
+      entityId: moduleId,
+      previousValues: { enabled: previous.enabled },
+      newValues: { enabled },
+    } });
+    return module;
   });
-
-  await writeAuditLog({
-    userId,
-    action: enabled ? "module.enable" : "module.disable",
-    entityType: "LicenceModule",
-    entityId: moduleId,
-    previousValues: { enabled: prev?.enabled },
-    newValues: { enabled },
-  });
-
-  return module;
 }
 
 /**
@@ -222,66 +274,50 @@ export async function toggleModule(
  */
 export async function createModuleVersion(
   moduleId: string,
-  data: {
-    formSchema: FormSection[];
-    documentRequirements: DocumentRequirement[];
-    workflowDefinition: WorkflowStage[];
-    reviewChecklist: ChecklistItem[];
-    feeSchedule?: FeeSchedule;
-    publicDescription?: string;
-    helpText?: string;
-    beforeYouStartText?: string;
-    visibility?: "PUBLIC" | "STAFF_ONLY" | "DRAFT";
-    paymentMode?: string;
-    applicationTypes?: string[];
-    submissionMailbox?: string;
-    owningTeamId?: string;
-    acceptingApplications?: boolean;
-  },
-  userId: string
+  data: ModuleDefinition,
+  userId: string,
+  options: { intent: "draft" | "publish"; baseVersionId: string; enableModule?: boolean },
 ) {
-  // Deactivate previous versions
-  await prisma.moduleVersion.updateMany({
-    where: { moduleId, isActive: true },
-    data: { isActive: false },
-  });
-
-  // Get next version number
-  const latest = await prisma.moduleVersion.findFirst({
-    where: { moduleId },
-    orderBy: { version: "desc" },
-  });
-
-  const newVersion = await prisma.moduleVersion.create({
-    data: {
-      moduleId,
-      version: (latest?.version ?? 0) + 1,
-      isActive: true,
-      publishedAt: data.visibility === "PUBLIC" ? new Date() : null,
-      visibility: (data.visibility as any) ?? "DRAFT",
-      publicDescription: data.publicDescription,
-      helpText: data.helpText,
-      beforeYouStartText: data.beforeYouStartText,
-      applicationTypes: data.applicationTypes ?? ["new"],
-      paymentMode: (data.paymentMode as any) ?? "NO_FEE",
-      feeSchedule: (data.feeSchedule as any) ?? undefined,
-      formSchema: data.formSchema as any,
-      documentRequirements: data.documentRequirements as any,
-      workflowDefinition: data.workflowDefinition as any,
-      reviewChecklist: data.reviewChecklist as any,
-      submissionMailbox: data.submissionMailbox,
-      owningTeamId: data.owningTeamId,
-      acceptingApplications: data.acceptingApplications ?? true,
-    },
-  });
-
-  await writeAuditLog({
-    userId,
-    action: "module.version.create",
-    entityType: "ModuleVersion",
-    entityId: newVersion.id,
-    newValues: { moduleId, version: newVersion.version },
-  });
-
-  return newVersion;
+  const definition = moduleDefinitionSchema.parse(data);
+  const publishing = options.intent === "publish";
+  if (publishing) {
+    const issues = getModuleReadiness(definition, Number(process.env.MAX_FILE_SIZE_MB) || 10);
+    if (definition.visibility === "DRAFT") issues.push({ area: "general", path: "visibility", message: "Choose public or staff-only visibility before publishing." });
+    if (issues.length) throw new ModuleBuilderError("Resolve the validation issues before publishing.", 422, issues);
+  }
+  try {
+    return await prisma.$transaction(async (transaction) => {
+      await transaction.licenceModule.update({ where: { id: moduleId }, data: { updatedAt: new Date() } });
+      const latest = await transaction.moduleVersion.findFirst({ where: { moduleId }, orderBy: { version: "desc" } });
+      if (!latest || latest.id !== options.baseVersionId) {
+        throw new ModuleBuilderError("Another administrator saved a newer version. Export your changes, then reload the latest version before saving.", 409);
+      }
+      if (publishing) {
+        await transaction.moduleVersion.updateMany({ where: { moduleId, isActive: true }, data: { isActive: false } });
+        if (options.enableModule !== undefined) {
+          await transaction.licenceModule.update({ where: { id: moduleId }, data: { enabled: options.enableModule } });
+        }
+      }
+      const version = await transaction.moduleVersion.create({ data: {
+        ...definitionData(definition, latest),
+        moduleId,
+        version: latest.version + 1,
+        isActive: publishing,
+        publishedAt: publishing ? new Date() : null,
+        visibility: publishing ? definition.visibility : "DRAFT",
+        acceptingApplications: publishing ? definition.acceptingApplications : false,
+      } });
+      await transaction.auditLog.create({ data: {
+        userId,
+        action: publishing ? "module.version.publish" : "module.version.draft",
+        entityType: "ModuleVersion",
+        entityId: version.id,
+        previousValues: { baseVersionId: latest.id },
+        newValues: { moduleId, version: version.version, visibility: version.visibility, enabled: options.enableModule ?? null },
+      } });
+      return version;
+    });
+  } catch (error) {
+    translateWriteError(error);
+  }
 }

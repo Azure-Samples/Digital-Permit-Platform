@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import type { FormField, FormSection } from "@/types/module";
 import { evaluateCondition } from "@/lib/conditions";
+import { validateAnswers } from "@/lib/api/validate";
 
 /** Convert YYYY-MM-DD to DD/MM/YYYY for display, pass through otherwise */
 function formatDateForDisplay(val: string): string {
@@ -20,8 +21,8 @@ interface DynamicFormProps {
   onSave: (
     sectionKey: string,
     answers: Record<string, unknown>,
-  ) => Promise<boolean>;
-  onNext: () => void;
+  ) => boolean | Promise<boolean>;
+  onNext: (sectionKey: string, answers: Record<string, unknown>) => void;
   onPrevious: () => void;
   isFirstSection: boolean;
   isLastSection: boolean;
@@ -74,41 +75,17 @@ export function DynamicForm({
   }
 
   function validateSection(): boolean {
-    const newErrors: Record<string, string> = {};
-    for (const field of section.fields) {
-      if (!isFieldVisible(field)) continue;
-      if (field.required && !localAnswers[field.key]) {
-        newErrors[field.key] = `${field.label} is required`;
-      }
-      if (field.validation) {
-        const val = localAnswers[field.key];
-        if (
-          field.validation.minLength &&
-          typeof val === "string" &&
-          val.length < field.validation.minLength
-        ) {
-          newErrors[field.key] =
-            `Must be at least ${field.validation.minLength} characters`;
-        }
-        if (
-          field.validation.maxLength &&
-          typeof val === "string" &&
-          val.length > field.validation.maxLength
-        ) {
-          newErrors[field.key] =
-            `Must be no more than ${field.validation.maxLength} characters`;
-        }
-      }
-    }
+    const result = validateAnswers([section], { [section.key]: localAnswers }, { contextAnswers: allAnswers });
+    const newErrors = Object.fromEntries(result.errors.map((error) => [error.field, error.message]));
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return result.ok;
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (validateSection()) {
       const saved = await onSave(section.key, localAnswers);
-      if (saved) onNext();
+      if (saved) onNext(section.key, localAnswers);
     }
   }
 
@@ -516,7 +493,7 @@ function RepeatableSection({
               </button>
             )}
           </div>
-          {field.repeatableSchema?.map((subField) => (
+          {field.repeatableSchema?.filter((subField) => !subField.conditionalOn || evaluateCondition(subField.conditionalOn, { ...allAnswers, ...item })).map((subField) => (
             <FieldRenderer
               key={`${field.key}-${index}-${subField.key}`}
               field={{
@@ -525,7 +502,7 @@ function RepeatableSection({
               }}
               value={item[subField.key]}
               onChange={(val) => updateItem(index, subField.key, val)}
-              allAnswers={allAnswers}
+              allAnswers={{ ...allAnswers, ...item }}
             />
           ))}
         </div>

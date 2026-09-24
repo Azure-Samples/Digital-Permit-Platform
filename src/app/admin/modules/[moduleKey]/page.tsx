@@ -3,22 +3,30 @@ import { redirect, notFound } from "next/navigation";
 import { GovHeader, getNavigationForRole } from "@/components/ui/header";
 import { GovFooter } from "@/components/ui/footer";
 import { requireRole } from "@/lib/permissions";
-import { getModuleByKey } from "@/lib/modules/registry";
+import { getModuleBuilderOptions, getModuleForBuilder } from "@/lib/modules/registry";
+import { toModuleDefinition } from "@/lib/modules/definition";
 import { ModuleBuilder } from "@/components/admin/module-builder";
 
 export const dynamic = "force-dynamic";
 
 export default async function ModuleEditPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ moduleKey: string }>;
+  searchParams: Promise<{ tab?: string; saved?: string }>;
 }) {
   const session = await requireRole("ADMIN").catch(() => null);
   if (!session) redirect("/auth/login?callbackUrl=/admin");
 
   const resolvedParams = await params;
-  const module = await getModuleByKey(resolvedParams.moduleKey);
+  const [module, options, query] = await Promise.all([
+    getModuleForBuilder(resolvedParams.moduleKey),
+    getModuleBuilderOptions(),
+    searchParams,
+  ]);
   if (!module) return notFound();
+  const version = module.versions[0];
 
   return (
     <>
@@ -43,11 +51,26 @@ export default async function ModuleEditPage({
           </nav>
 
           <ModuleBuilder
-            moduleKey={module.moduleKey}
-            displayName={module.displayName}
-            category={module.category}
-            moduleId={module.id}
-            version={module.activeVersion}
+            key={module.id}
+            userId={session.user.id}
+            options={{ ...options, uploadLimitMb: Number(process.env.MAX_FILE_SIZE_MB) || 10 }}
+            initialTab={query.tab}
+            notice={query.saved === "1" ? "Draft module created. It is disabled and not accepting applications." : undefined}
+            initial={{
+              moduleId: module.id,
+              moduleKey: module.moduleKey,
+              displayName: module.displayName,
+              category: module.category,
+              enabled: module.enabled,
+              versionId: version.id,
+              versionNumber: version.version,
+              definition: toModuleDefinition(version),
+              liveVersion: module.liveVersion,
+              history: module.versions.map((entry) => ({
+                id: entry.id, version: entry.version, visibility: entry.visibility,
+                isActive: entry.isActive, createdAt: entry.createdAt.toISOString(),
+              })),
+            }}
           />
         </div>
       </main>

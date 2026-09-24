@@ -2,6 +2,7 @@
 
 import { useState, useRef } from "react";
 import type { DocumentRequirement } from "@/types/module";
+import { evaluateCondition } from "@/lib/conditions";
 
 interface DocumentUploadProps {
   requirements: DocumentRequirement[];
@@ -34,19 +35,7 @@ export function DocumentUpload({
   );
 
   const applicableRequirements = requirements.filter((req) => {
-    if (!req.conditionalOn) return true;
-    const { field, operator, value } = req.conditionalOn;
-    const fieldValue = flatAnswers[field];
-    switch (operator) {
-      case "eq":
-        return fieldValue === value;
-      case "neq":
-        return fieldValue !== value;
-      case "exists":
-        return fieldValue !== undefined && fieldValue !== null && fieldValue !== "";
-      default:
-        return true;
-    }
+    return !req.conditionalOn || evaluateCondition(req.conditionalOn, flatAnswers);
   });
 
   async function handleUpload(requirementKey: string, file: File) {
@@ -54,6 +43,9 @@ export function DocumentUpload({
     setError(null);
 
     try {
+      const requirement = requirements.find((item) => item.key === requirementKey);
+      if (requirement?.acceptedMimeTypes?.length && !requirement.acceptedMimeTypes.includes(file.type)) throw new Error("This file type is not accepted for this document.");
+      if (file.size > (requirement?.maxSizeMb ?? 10) * 1024 * 1024) throw new Error(`The file must be no larger than ${requirement?.maxSizeMb ?? 10} MB.`);
       const formData = new FormData();
       formData.append("file", file);
       formData.append("applicationId", applicationId);
@@ -147,8 +139,8 @@ export function DocumentUpload({
                     Replace
                     <input
                       type="file"
-                      className="hidden"
-                      accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                      className="sr-only"
+                      accept={req.acceptedMimeTypes?.join(",") || ".pdf,.jpg,.jpeg,.png,.doc,.docx"}
                       onChange={(e) => {
                         const file = e.target.files?.[0];
                         if (file) handleUpload(req.key, file);
@@ -166,8 +158,8 @@ export function DocumentUpload({
                     {isUploading ? "Uploading..." : "Choose file"}
                     <input
                       type="file"
-                      className="hidden"
-                      accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                      className="sr-only"
+                      accept={req.acceptedMimeTypes?.join(",") || ".pdf,.jpg,.jpeg,.png,.doc,.docx"}
                       disabled={isUploading}
                       onChange={(e) => {
                         const file = e.target.files?.[0];

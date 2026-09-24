@@ -14,6 +14,8 @@
     "lint": "biome lint .",
     "test": "tsx --test tests/*.test.ts",
     "test:watch": "tsx --test --watch tests/*.test.ts",
+    "test:modules": "tsx --test tests/module-builder.test.ts tests/module-builder.integration.test.ts",
+    "test:modules:e2e": "playwright test tests/module-builder.spec.ts --workers=1 --reporter=line --output=test-results/module-builder",
     "docs:check": "node scripts/check-markdown-links.mjs",
     "audit:allowlist": "node scripts/audit-with-allowlist.mjs --audit-level low",
     "validate:release": "node scripts/validate-public-release.mjs",
@@ -82,6 +84,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
+    "@playwright/test": "^1.63.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.20.1",
     "@types/pdf-parse": "^1.1.5",
