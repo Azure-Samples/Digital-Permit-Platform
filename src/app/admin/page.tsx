@@ -57,7 +57,7 @@ export default async function AdminDashboard() {
 
       <main className="govuk-main-wrapper" id="main-content">
         <div className="govuk-container">
-          <div className="flex justify-between items-center mb-6">
+          <div className="flex flex-wrap gap-4 justify-between items-center mb-6">
             <h1>Module registry</h1>
             <div className="flex gap-3">
               <TourLauncher
@@ -192,10 +192,11 @@ export default async function AdminDashboard() {
                             </span>
                           </td>
                           <td className="govuk-table__cell text-sm">
-                            {latestVersion?.visibility ?? "—"}
+                            {mod.liveVersion?.visibility ?? "Not published"}
                           </td>
                           <td className="govuk-table__cell text-sm">
-                            v{latestVersion?.version ?? 0}
+                            {mod.liveVersion ? `Live v${mod.liveVersion.version}` : "No live version"}
+                            {latestVersion?.visibility === "DRAFT" && <span className="block text-xs text-govuk-dark-grey">Draft v{latestVersion.version}</span>}
                           </td>
                           <td className="govuk-table__cell text-sm">
                             {mod._count.applications}
@@ -216,6 +217,8 @@ export default async function AdminDashboard() {
                                 <button
                                   id={mod.id === modules[0]?.id ? "admin-tour-toggle" : undefined}
                                   type="submit"
+                                  disabled={!mod.enabled && !mod.liveVersion}
+                                  title={!mod.enabled && !mod.liveVersion ? "Publish a version before enabling this module" : undefined}
                                   className="text-sm text-govuk-red underline"
                                 >
                                   {mod.enabled ? "Disable" : "Enable"}

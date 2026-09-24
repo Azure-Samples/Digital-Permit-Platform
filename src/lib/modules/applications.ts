@@ -4,7 +4,7 @@
 import { prisma } from "../db";
 import { writeAuditLog } from "../audit";
 import { generateReferenceNumber } from "../reference";
-import type { ApplicationStatus } from "@prisma/client";
+import { Prisma, type ApplicationStatus } from "@prisma/client";
 
 export interface CreateApplicationInput {
   moduleId: string;
@@ -29,47 +29,49 @@ export function mergeDraftAnswers(
  * Create a new draft application.
  */
 export async function createApplication(input: CreateApplicationInput) {
-  // Get application count for sequence
-  const count = await prisma.application.count({
-    where: { moduleId: input.moduleId },
-  });
-
-  const module = await prisma.licenceModule.findUnique({
-    where: { id: input.moduleId },
-  });
-
-  const referenceNumber = generateReferenceNumber(
-    module?.moduleKey ?? "GEN",
-    count + 1
-  );
-
-  const application = await prisma.application.create({
-    data: {
-      referenceNumber,
-      moduleId: input.moduleId,
-      moduleVersionId: input.moduleVersionId,
-      applicationType: input.applicationType,
-      applicantId: input.applicantId,
-      organisationId: input.organisationId,
-      status: "DRAFT",
-      answers: {},
-    },
-  });
-
-  await writeAuditLog({
-    userId: input.applicantId,
-    applicationId: application.id,
-    action: "application.create",
-    entityType: "Application",
-    entityId: application.id,
-    newValues: {
-      referenceNumber,
-      moduleKey: module?.moduleKey,
-      applicationType: input.applicationType,
-    },
-  });
-
-  return application;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      return await prisma.$transaction(async (transaction) => {
+        const version = await transaction.moduleVersion.findUnique({
+          where: { id: input.moduleVersionId },
+          include: { module: true },
+        });
+        if (!version || version.moduleId !== input.moduleId || !version.module.enabled || !version.isActive || version.visibility !== "PUBLIC" || !version.acceptingApplications || !version.applicationTypes.includes(input.applicationType)) {
+          throw new Error("This module is not accepting this application type.");
+        }
+        const now = new Date();
+        const prefix = generateReferenceNumber(version.module.moduleKey, 0, now).replace(/\d+$/, "");
+        let sequence = await transaction.application.count({ where: { referenceNumber: { startsWith: prefix } } }) + 1;
+        let referenceNumber = generateReferenceNumber(version.module.moduleKey, sequence, now);
+        while (await transaction.application.findUnique({ where: { referenceNumber }, select: { id: true } })) {
+          sequence += 1;
+          referenceNumber = generateReferenceNumber(version.module.moduleKey, sequence, now);
+        }
+        const application = await transaction.application.create({ data: {
+          referenceNumber,
+          moduleId: input.moduleId,
+          moduleVersionId: input.moduleVersionId,
+          applicationType: input.applicationType,
+          applicantId: input.applicantId,
+          organisationId: input.organisationId,
+          status: "DRAFT",
+          answers: {},
+        } });
+        await transaction.auditLog.create({ data: {
+          userId: input.applicantId,
+          applicationId: application.id,
+          action: "application.create",
+          entityType: "Application",
+          entityId: application.id,
+          newValues: { referenceNumber, moduleKey: version.module.moduleKey, applicationType: input.applicationType },
+        } });
+        return application;
+      }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+    } catch (error) {
+      if (!(error instanceof Prisma.PrismaClientKnownRequestError) || !["P2002", "P2034"].includes(error.code) || attempt === 4) throw error;
+    }
+  }
+  throw new Error("Application could not be created. Try again.");
 }
 
 /**

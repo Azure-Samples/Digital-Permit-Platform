@@ -8,6 +8,8 @@ next-env.d.ts
 dist/
 deployment-result.json
 coverage/
+test-results/
+playwright-report/
 .DS_Store
 *.log
 

@@ -8,6 +8,7 @@ import { GovHeader } from "@/components/ui/header";
 import { GovFooter } from "@/components/ui/footer";
 import type { FormSection, DocumentRequirement } from "@/types/module";
 import { formatAnswerValue } from "@/lib/format";
+import { evaluateCondition } from "@/lib/conditions";
 
 interface ApplicationWizardProps {
   applicationId: string;
@@ -34,7 +35,7 @@ export function ApplicationWizard({
   applicationId,
   referenceNumber,
   moduleName,
-  formSchema,
+  formSchema: configuredFormSchema,
   documentRequirements,
   paymentMode,
   feeAmount,
@@ -54,6 +55,8 @@ export function ApplicationWizard({
   const [paymentReference, setPaymentReference] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const flatAnswers = Object.assign({}, ...Object.values(answers)) as Record<string, unknown>;
+  const formSchema = configuredFormSchema.filter((section) => !section.conditionalOn || evaluateCondition(section.conditionalOn, flatAnswers));
 
   // Skip payment step if receipt is already captured as a document requirement
   const hasReceiptDocRequirement = documentRequirements.some(
@@ -115,10 +118,13 @@ export function ApplicationWizard({
     }
   }
 
-  function handleNextSection() {
-    if (currentSectionIndex < formSchema.length - 1) {
+  function handleNextSection(sectionKey: string, sectionAnswers: Record<string, unknown>) {
+    const currentAnswers = { ...flatAnswers, ...sectionAnswers };
+    const visibleSections = configuredFormSchema.filter((section) => !section.conditionalOn || evaluateCondition(section.conditionalOn, currentAnswers));
+    const currentIndex = visibleSections.findIndex((section) => section.key === sectionKey);
+    if (currentIndex < visibleSections.length - 1) {
       setCompletedSteps((prev) => [...prev, `form-${currentSectionIndex}`]);
-      setCurrentSectionIndex((i) => i + 1);
+      setCurrentSectionIndex(currentIndex + 1);
     } else {
       setCompletedSteps((prev) => [
         ...prev,
@@ -292,13 +298,7 @@ export function ApplicationWizard({
                       if (!req.required) return false;
                       // Check conditional visibility
                       if (req.conditionalOn) {
-                        const fieldVal = flatAnswers[req.conditionalOn.field];
-                        const { operator, value } = req.conditionalOn;
-                        let visible = true;
-                        if (operator === "eq") visible = fieldVal === value;
-                        else if (operator === "neq") visible = fieldVal !== value;
-                        else if (operator === "exists") visible = fieldVal !== undefined && fieldVal !== null && fieldVal !== "";
-                        if (!visible) return false;
+                        if (!evaluateCondition(req.conditionalOn, flatAnswers)) return false;
                       }
                       // Check if uploaded
                       return !uploadedDocuments.some((d) => d.requirementKey === req.key);
@@ -399,6 +399,7 @@ export function ApplicationWizard({
                   </button>
                   <button type="button"
                     className="govuk-button"
+                    disabled={paymentMode === "MANUAL_REFERENCE" && !paymentReference.trim()}
                     onClick={() => {
                       setCompletedSteps((p) => [...p, "payment"]);
                       setCurrentStep("declaration");
@@ -499,6 +500,7 @@ export function ApplicationWizard({
                         </h3>
                         <dl className="govuk-summary-list">
                           {section.fields.map((field) => {
+                            if (field.conditionalOn && !evaluateCondition(field.conditionalOn, flatAnswers)) return null;
                             const val = sectionAnswers[field.key];
                             if (val === undefined || val === null || val === "")
                               return null;
