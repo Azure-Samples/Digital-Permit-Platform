@@ -8,6 +8,8 @@ dist
 .env.local
 *.log
 coverage
+test-results
+playwright-report
 .DS_Store
 review-agent-app
 ${userHome}

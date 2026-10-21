@@ -15,7 +15,7 @@ export default async function ModuleDetailPage({
 }) {
   const resolvedParams = await params;
   const module = await getModuleByKey(resolvedParams.moduleKey);
-  if (!module) return notFound();
+  if (!module || !module.enabled || module.activeVersion.visibility !== "PUBLIC") return notFound();
 
   const session = await getSessionOrNull();
   const version = module.activeVersion;
@@ -23,7 +23,7 @@ export default async function ModuleDetailPage({
 
   // Resolve fee display
   let feeDisplay = "No fee";
-  if (feeSchedule) {
+  if (feeSchedule && version.paymentMode !== "NO_FEE" && Object.keys(feeSchedule).length > 0) {
     const fees = Object.entries(feeSchedule);
     if (fees.length === 1) {
       const val = fees[0][1];
@@ -160,23 +160,16 @@ export default async function ModuleDetailPage({
                     your application.
                   </p>
                   {session ? (
-                    <form action={`/api/applications/create`} method="POST">
-                      <input
-                        type="hidden"
-                        name="moduleKey"
-                        value={module.moduleKey}
-                      />
-                      <input
-                        type="hidden"
-                        name="applicationType"
-                        value="new"
-                      />
-                      <Link
-                        href={`/apply/${module.moduleKey}/new`}
-                        className="govuk-button govuk-button--start no-underline"
-                      >
+                    <form action={`/apply/${module.moduleKey}/new`} method="GET">
+                      {version.applicationTypes.length > 1 ? <div className="govuk-form-group">
+                        <label htmlFor="application-type" className="govuk-label">Application type</label>
+                        <select name="applicationType" id="application-type" className="govuk-select" defaultValue={version.applicationTypes[0]}>
+                          {version.applicationTypes.map((type) => <option key={type} value={type}>{type.replaceAll("_", " ")}</option>)}
+                        </select>
+                      </div> : <input type="hidden" name="applicationType" value={version.applicationTypes[0] ?? "new"} />}
+                      <button type="submit" className="govuk-button govuk-button--start">
                         Start application
-                      </Link>
+                      </button>
                     </form>
                   ) : (
                     <Link

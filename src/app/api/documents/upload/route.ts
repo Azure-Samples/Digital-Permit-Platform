@@ -11,6 +11,8 @@ import {
   fileSignatureMatchesMime,
 } from "@/lib/http/validation";
 import { requestClientAddress } from "@/lib/http/rate-limit";
+import { evaluateCondition } from "@/lib/conditions";
+import type { DocumentRequirement } from "@/types/module";
 
 const ALLOWED_TYPES = new Set([
   "application/pdf",
@@ -70,7 +72,7 @@ export async function POST(req: NextRequest) {
     // Verify application belongs to user
     const application = await prisma.application.findUnique({
       where: { id: applicationId },
-      select: { id: true, applicantId: true },
+      select: { id: true, applicantId: true, answers: true, moduleVersion: { select: { documentRequirements: true } } },
     });
 
     if (!application || application.applicantId !== session.user.id) {
@@ -78,6 +80,19 @@ export async function POST(req: NextRequest) {
         { error: "Application not found" },
         { status: 404 },
       );
+    }
+
+    const requirements = application.moduleVersion.documentRequirements as unknown as DocumentRequirement[];
+    const requirement = requirements.find((item) => item.key === requirementKey);
+    const answers = Object.assign({}, ...Object.values(application.answers as Record<string, unknown>)) as Record<string, unknown>;
+    if (!requirement || (requirement.conditionalOn && !evaluateCondition(requirement.conditionalOn, answers))) {
+      return NextResponse.json({ error: "This document is not required by the application configuration." }, { status: 400 });
+    }
+    if (requirement.acceptedMimeTypes?.length && !requirement.acceptedMimeTypes.includes(file.type)) {
+      return NextResponse.json({ error: "This file type is not accepted for this document." }, { status: 400 });
+    }
+    if (file.size > Math.min(MAX_SIZE_MB, requirement.maxSizeMb ?? MAX_SIZE_MB) * 1024 * 1024) {
+      return NextResponse.json({ error: `File size exceeds ${Math.min(MAX_SIZE_MB, requirement.maxSizeMb ?? MAX_SIZE_MB)}MB limit` }, { status: 413 });
     }
 
     // Validate MIME allow-list before touching disk again.

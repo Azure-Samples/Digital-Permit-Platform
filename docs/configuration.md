@@ -180,20 +180,28 @@ Policy Copilot uses one interface for both regimes. Taxi-specific questions and 
 
 An active `ModuleVersion` can define:
 
-- public description and before-you-start guidance;
-- application types;
-- form sections and fields;
-- conditional field and document rules;
-- document requirements and verification status;
-- workflow stages, order, SLA days, reminders, and visibility;
-- review checklist;
-- fees and payment mode;
-- owning team and submission mailbox;
-- eligibility and retention settings;
-- decision and notification templates;
-- feature flags and application availability.
 
 Use the administrator module builder for demonstration and controlled configuration. For production, define review, approval, promotion, rollback, and audit processes for module changes.
+
+### Creating and publishing modules
+
+Open **Modules > Create module** at `/admin/modules/new`. Start blank, use a standard or inspection starter, copy an existing module, or import a module JSON package. Configure details, application types, questions, conditional sections, evidence, workflow targets, officer checks and fees. The permanent module key must be unique; `new` is reserved for the creation route.
+
+The builder supports choice lists, repeatable groups, earlier-question conditions, reorder/duplicate controls and undo/redo. **Preview** uses the applicant form renderer without submitting an application or uploading evidence. Check both desktop and mobile layouts before publication.
+
+**Save draft** creates an inactive version. New modules remain disabled and closed to applications; drafting changes to an existing module does not replace its published version. **Review & publish** validates the configuration and requires explicit confirmation of audience, enablement and application availability. Version activation, enablement and audit logging are transactional. Existing applications retain their original module version when resumed.
+
+Unsaved configuration has a user-scoped browser recovery copy and can be exported as a version 1 JSON package. Imports and version-history restoration change only the editor; they do not publish automatically. A stale editor cannot overwrite a newer save: export unsaved work, then reload before retrying. Recovery storage is not a server save.
+
+Supported new payment flows are no fee, manual reference and receipt upload. Choosing receipt upload adds a required receipt requirement. The incomplete external-gateway and payment-API modes cannot be newly published. Existing advanced settings and fee bands are preserved, but the payment service uses the base amount. File uploads belong in document requirements, where allowed MIME types and maximum size are enforced alongside existing upload security checks. The platform maximum remains `MAX_FILE_SIZE_MB`.
+
+The builder is administrator-only, uses same-origin mutation checks and bounds JSON requests to 1 MiB. It requires no database migration or reseeding. Existing deployments receive it only after their web image is updated. Specialised deployments must retain their existing intake restrictions and custom form types rather than replacing them with a generic image.
+
+### Module builder tests
+
+- `npm run test:modules` runs definition tests. Add `MODULE_BUILDER_INTEGRATION=1` and a `DATABASE_URL` targeting a disposable local `dpp_module_builder_*` database to include database lifecycle, concurrency and rollback tests. Apply existing migrations to that disposable database first. Never point integration tests at a deployed database.
+- `npx playwright install chromium` installs the browser used by `npm run test:modules:e2e`. Point `MODULE_BUILDER_URL` at an isolated local app and set `MODULE_BUILDER_PASSWORD` to its seeded demo password. Defaults are `http://localhost:3107` and the synthetic development password `password123`.
+- Browser tests cover create/preview/publish, a full applicant renewal, preserved historical versions, evidence rejection, access control, recovery, failed saves, import/export, concurrent edits, version restoration, registry toggles, keyboard navigation, and desktop/mobile layouts. They create synthetic fixtures and reject non-local URLs. Screenshots and traces are ignored under `test-results/module-builder/`.
 
 ## Licence document templates
 
