@@ -12,12 +12,21 @@ import process from "node:process";
 
 const ALLOWED_ADVISORIES = new Map([
   [
-    "GHSA-2v37-7h3g-55p8",
+    "GHSA-vfj7-8cjw-p6xm",
     {
-      package: "nanoid",
+      package: "braces",
       severity: "high",
       reason:
-        "postcss 8.x requires nanoid 3.x, but the advisory fix range is <3.3.18 which has not been published. postcss does not call nanoid with custom generators (size !== 0), so this app is not exploitable. Remove this allowlist entry once nanoid@3.3.18+ ships or postcss adopts nanoid@5.",
+        "braces 3.0.3 has no published fix. It is used only by Tailwind development/build tooling with repository-controlled glob patterns, not request input. Reassess on dependency or content-glob changes and remove when a patched release is available.",
+    },
+  ],
+  [
+    "GHSA-hp3w-g68c-fv3c",
+    {
+      package: "sprintf-js",
+      severity: "moderate",
+      reason:
+        "sprintf-js has no published fix. It is present through Mammoth's argparse CLI dependency; the application uses only Mammoth's extractRawText library API, which does not invoke argparse or pass document text as sprintf format strings. Reassess if CLI or formatting usage is introduced and remove when a patched release is available.",
     },
   ],
 ]);
