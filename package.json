@@ -38,7 +38,7 @@
     "docker:down": "docker compose down"
   },
   "dependencies": {
-    "@azure/identity": "^4.13.0",
+    "@azure/identity": "^4.14.1",
     "@azure/monitor-opentelemetry": "^1.19.0",
     "@azure/storage-blob": "^12.17.0",
     "@prisma/client": "^6.19.0",
